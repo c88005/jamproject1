@@ -7,11 +7,6 @@ import datetime
 from os import path
 from os.path import isfile, join
 
-from OpenGL_accelerate.wrapper import pyArgConverter
-from arcade import print_timings
-from pyglm.glm import trunc
-
-
 def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
     newTexture = pygame.image.load(texture)
     if resize:
@@ -41,7 +36,7 @@ class Game:
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
         self.entitymanager = EntityManager(self.screen, self.relativeSize, self.settings, None)
-        self.player = Player(w/2, h/2, None, 64,
+        self.player = Player(w/2, h/2, None, 63,
                              textureAtlas("assets/templaet.png", 0,0,32,32,
                                                True, 2*self.relativeSize/10))
         self.bloodOnScreen = 0
@@ -104,7 +99,6 @@ class Game:
         if self.settings.showFps:
             self.renderText(str(math.floor(self.clock.get_fps())), 1, 1)
     def update(self):
-
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -145,6 +139,15 @@ class Game:
         text_surface = my_font.render(string, alias, color)
         self.screen.blit(text_surface, (x, y))
 
+    def renderTextWOutline(self, string, x, y, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True, outlineWith=1, outlineColor=(0, 0, 0)):
+        pygame.font.init()
+        if systemFont:
+            my_font = pygame.font.SysFont(font, size)
+        else:
+            my_font = pygame.font.Font(font, size)
+        text_surface = my_font.render(string, alias, color)
+        self.screen.blit(text_surface, (x, y))
+
 
 class Settings:
     def __init__(self, w, h, fps):
@@ -156,17 +159,22 @@ class Settings:
         self.music = True
         self.soundVolume = 100
         self.musicVolume = 100
+        self.showBlood = True
+        self.showBloodOnScreen = True
         self.showAABB = False
 
     def playSound(self, sound, volume):
         if self.sound:
             playableSound = pygame.mixer.Sound(sound)
             playableSound.set_volume(self.soundVolume/100 * volume/100)
+            playableSound.play()
 
     def save(self):
         settingsFile = json.dumps({
             "showAABB":self.showAABB,
             "showFps":self.showFps,
+            "showBlood": self.showBlood,
+            "showBloodOnScreen": self.showBloodOnScreen,
             "width":self.w,
             "height":self.h,
             "sound":self.sound,
@@ -182,6 +190,8 @@ class Settings:
             try:
                 self.showAABB = settingsFile["showAABB"]
                 self.showFps = settingsFile["showFps"]
+                self.showBlood = settingsFile["showBlood"]
+                self.showBloodOnScreen = settingsFile["showBloodOnScreen"]
                 self.w = settingsFile["width"]
                 self.h = settingsFile["height"]
                 self.sound = settingsFile["sound"]
@@ -246,16 +256,23 @@ class Map:
         print(wallsAmount)
         for i in range(wallsAmount):
             self.createWall(rng, 128, 0, 32, 32)
+        self.createBounds(160, 0, 32, 32)
 
+    def spawnTable(self, x, y):
+        self.objects.append(
+            TableObject(x, y,self.objectManager,textureAtlas("assets/terrain.png", 192, 0, 64, 32,
+                                     True, 2 * self.objectManager.relativeSize / 9.9)
+                        ))
     def createWall(self, rng, x0,y0,x1,y1):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
         centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
-        expansion = rng.randint(1, 3)
+        expansion = rng.randint(1, 5)
         for i in range(expansion):
             replacement = rng.randint(1, 5)
+            position = rng.randint(1, 10)
             self.objects.append(
-                GameObject(centeringX + rng.randint(1, 10) * size + i*size, centeringY + rng.randint(0, 7) * size,
+                GameObject(centeringX + position * size + i*size, centeringY + rng.randint(0, 7) * size,
                            self.objectManager, 64,
                            textureAtlas("assets/terrain.png", x0, y0, x1, y1,
                                         True, 2 * self.objectManager.relativeSize / 9.9)
@@ -263,13 +280,33 @@ class Map:
 
     def createFloor(self, x0, y0, x1, y1):
         size = math.floor(32 * (2 * self.objectManager.relativeSize / 10))
-        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
-        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        centeringX = math.floor((self.objectManager.settings.w - size * 14) / 2)
+        centeringY = math.floor((self.objectManager.settings.h - size * 9) / 2)
         for i in range(9):
             for j in range(14):
-                self.floorTiles.append(GameObject(centeringX+(j * size), centeringY+ i * size, self.objectManager, size,
-                                                  textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                                               True, 2 * self.objectManager.relativeSize / 10)))
+                self.floorTiles.append(
+                    GameObject(centeringX + (j * size), centeringY + i * size, self.objectManager, 0,
+                               textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                            True, 2 * self.objectManager.relativeSize / 10)))
+
+    def createBounds(self, x0, y0, x1, y1):
+        size = math.floor(32 * (2 * self.objectManager.relativeSize / 10))
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        for j in range(14):
+            self.objects.append(GameObject(centeringX+(j * size), -size*0.5, self.objectManager, 64,
+                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                           True, 2 * self.objectManager.relativeSize / 10)))
+            self.objects.append(GameObject(centeringX + (j * size), self.objectManager.settings.h - size * 0.5, self.objectManager, 64,
+                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                        True, 2 * self.objectManager.relativeSize / 10)))
+        for i in range(9):
+            self.objects.append(GameObject(0, size*i, self.objectManager, 64,
+                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                           True, 2 * self.objectManager.relativeSize / 10)))
+            self.objects.append(GameObject(self.objectManager.settings.w - size, size * i, self.objectManager, 64,
+                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                        True, 2 * self.objectManager.relativeSize / 10)))
 
 class AABB:
     def __init__(self):
@@ -326,6 +363,7 @@ class GameObject:
         self.x = x
         self.y = y
         self.size = size
+        self.size2 = size
         self.objectManager = objectManager
         self.texture = texture
         self.hitbox = (size,size)
@@ -343,20 +381,42 @@ class GameObject:
 
     def draw(self):
         self.objectManager.screen.blit(self.texture, (self.x, self.y))
-        self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size*self.objectManager.relativeSize/10)
+        self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
         if self.objectManager.settings.showAABB:
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
                              (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 class ItemContainerObject(GameObject):
-    def __init__(self, x, y, objectManager, size, texture):
+    def __init__(self, x, y, objectManager, size, texture, health):
         super().__init__(x, y, objectManager, size, texture, False)
         self.items = []
+        self.health = health
+        self.maxHealth = health
+
+    def addItem(self, itemTuple):
+        self.items.append(itemTuple)
+
+    def hurt(self, damage):
+        if damage >= self.health:
+            self.health = 0
+        else:
+            self.health -= damage
+
+    def dropItems(self):
+        for item in self.items:
+            pass
 
 
+class TableObject(GameObject):
+    def __init__(self, x, y, objectManager, texture):
+        super().__init__(x, y, objectManager, 64, texture, False)
+        self.size = 128
+        self.size2 = 64
 
 class Entity(GameObject):
-    def __init__(self, x, y, entityManager, size, texture):
+    def __init__(self, x, y, entityManager, size, size2, texture):
         super().__init__(x,y,entityManager,size,texture,False)
+        self.size = size2
+        self.size2 = size
         self.health = 100
         self.maxHealth = 100
         self.isDead = False
@@ -392,6 +452,7 @@ class Entity(GameObject):
 
     def heal(self,amount):
         if self.health + amount > self.maxHealth:
+            self.objectManager.settings.playSound("assets/sounds/draw1.ogg",100)
             self.health = self.maxHealth
         else:
             self.health += amount
@@ -417,8 +478,25 @@ class Entity(GameObject):
         if ya_org != ya:
             self.yd = 0.0
 
+    def draw(self):
+        self.objectManager.screen.blit(self.texture, (self.x - (self.texture.get_rect()[2]-self.size*self.objectManager.relativeSize/10)/2, self.y))
+        self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
+        if self.objectManager.settings.showAABB:
+            pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
+                             (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
+
+class ItemEntity(Entity):
+    def __init__(self, x, y, entityManager, size, texture, name, itemId, amount):
+        super().__init__(x,y,entityManager,32, 32,texture)
+        self.name = name
+        self.itemId = itemId
+        self.amount = amount
+
+
 class Player(Entity):
     def __init__(self, x, y, entityManager, size, texture):
-        super().__init__(x,y,entityManager,size,texture)
+        super().__init__(x,y,entityManager,size, 40,texture)
+        self.inventory = [[],[],[],[]]
+
 
 Game(1920,1080)
