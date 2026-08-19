@@ -7,6 +7,9 @@ import datetime
 from os import path
 from os.path import isfile, join
 
+from arcade import print_timings
+
+
 def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
     newTexture = pygame.image.load(texture)
     if resize:
@@ -35,7 +38,7 @@ class Game:
         self.relativeSize = self.settings.w / 100
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
-        self.entitymanager = EntityManager(self.screen, self.relativeSize, self.settings, None)
+        self.entityManager = EntityManager(self.screen, self.relativeSize, self.settings, None)
         self.player = Player(w/2, h/2, None, 63,
                              textureAtlas("assets/templaet.png", 0,0,32,32,
                                                True, 2*self.relativeSize/10))
@@ -43,10 +46,10 @@ class Game:
         self.paused = False
         self.map.player = self.player
         self.objectManager.map = self.map
-        self.entitymanager.map = self.map
-        self.player.objectManager = self.entitymanager
+        self.entityManager.map = self.map
+        self.player.objectManager = self.entityManager
         self.map.objectManager = self.objectManager
-        self.map.objectManager = self.entitymanager
+        self.map.objectManager = self.entityManager
 
         if path.isfile("settings.json"):
             self.settings.parse()
@@ -99,6 +102,10 @@ class Game:
         if self.settings.showFps:
             self.renderText(str(math.floor(self.clock.get_fps())), 1, 1)
     def update(self):
+        self.map.entities.append(ItemEntity(150, 200, self.entityManager, textureAtlas("assets/items.png", 16, 0, 16, 16,
+                                                                                True,
+                                                                                2 * self.objectManager.relativeSize / 9.9),
+                                        ".22 Broomhandle", 1, 1))
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -107,14 +114,16 @@ class Game:
             self.gameTick()
 
             self.keyboardInput()
+            self.mouseInput()
             for tile in self.map.floorTiles:
                 tile.draw()
-            for object in self.map.objects:
-                object.draw()
-
+            for entity in self.map.entities:
+                entity.draw()
 
             self.player.draw()
 
+            for object in self.map.objects:
+                object.draw()
             self.ingameGui()
 
             self.clock.tick(self.fpsCap)
@@ -129,6 +138,24 @@ class Game:
         if keys[pygame.K_RIGHT] or keys[pygame.K_d]: self.player.xd = self.player.moveSpeed*self.relativeSize/10
         if keys[pygame.K_UP] or keys[pygame.K_w]: self.player.yd = -self.player.moveSpeed*self.relativeSize/10
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: self.player.yd = self.player.moveSpeed*self.relativeSize/10
+
+    def mouseInput(self):
+        pos = pygame.mouse.get_pos()
+        x = pos[0]
+        y = pos[1]
+        for entity in self.map.entities:
+            if isinstance(entity, ItemEntity):
+                if entity.x <= x <= entity.x + entity.hitbox[0] and entity.y <= y <= entity.y + entity.hitbox[1]:
+                    middlePlayer = (self.player.texture.get_rect()[2]-self.player.size*self.relativeSize/10)/2
+                    middleEntity = (entity.texture.get_rect()[2]-entity.size*self.relativeSize/10)/2
+                    c1 = (self.player.x + middlePlayer - entity.x - middleEntity) ** 2
+                    c2 = (self.player.y + self.player.hitbox[1]/2 - entity.x - entity.hitbox[1]/2) ** 2
+                    if math.fabs(math.sqrt(c1 + c2)) < self.relativeSize*15:
+                        print("YEAH")
+                    else:
+                        print("too far")
+                        print(math.fabs(math.sqrt(c1 + c2)), self.relativeSize*15)
+
 
     def renderText(self, string, x, y, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True):
         pygame.font.init()
@@ -251,6 +278,7 @@ class Map:
     def switchRoom(self):
         self.seed = random.randint(-10000, 10000)
         rng = random.Random(self.seed)
+
         self.createFloor(0,0,32,32)
         wallsAmount = rng.randint(1, 7)
         print(wallsAmount)
@@ -486,7 +514,7 @@ class Entity(GameObject):
                              (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 
 class ItemEntity(Entity):
-    def __init__(self, x, y, entityManager, size, texture, name, itemId, amount):
+    def __init__(self, x, y, entityManager, texture, name, itemId, amount):
         super().__init__(x,y,entityManager,32, 32,texture)
         self.name = name
         self.itemId = itemId
