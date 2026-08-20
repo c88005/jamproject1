@@ -75,6 +75,8 @@ class Game:
     def gameTick(self):
         if self.paused: return
         self.player.update()
+        for entity in self.map.entities:
+            entity.update()
 
     def ingameGui(self):
         bg1 =pygame.Surface((20*self.relativeSize, 10*self.relativeSize))
