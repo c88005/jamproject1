@@ -51,6 +51,11 @@ class Game:
         self.map.objectManager = self.objectManager
         self.map.objectManager = self.entityManager
 
+        self.items = Items(self.map, self.objectManager)
+        self.map.items = self.items
+        self.objectManager.items = self.items
+        self.entityManager.items = self.items
+
         if path.isfile("settings.json"):
             self.settings.parse()
             if w is not None and h is not None:
@@ -79,33 +84,57 @@ class Game:
         self.screen.blit(healthIcon,(0,self.settings.h-10*self.relativeSize))
         pygame.draw.rect(self.screen, "#ffffff",(10.5*self.relativeSize, self.settings.h-4*self.relativeSize,
                                                  self.relativeSize*7, self.relativeSize/3.5))
-        self.renderText(str(self.player.health), 10*self.relativeSize, self.settings.h-10*self.relativeSize,
+        self.renderText(str(math.floor(self.player.health)), 10*self.relativeSize, self.settings.h-10*self.relativeSize,
                         int(5*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
         self.renderText(str(self.player.maxHealth), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
                         int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
 
-        if self.player.health <= self.player.maxHealth / 2 and self.player.health > self.player.maxHealth/4:
+        for i in range(4):
+            slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
+            self.screen.blit(slot, (17*self.relativeSize+i*17*self.relativeSize, 0))
+            self.renderText("SLOT - " +str(i+1), 17*self.relativeSize+i*17*self.relativeSize + 4.5*self.relativeSize,
+                            self.relativeSize * 0.85, int(self.relativeSize*1.6), bold=True)
+            if len(self.player.inventory) > i:
+                item = self.player.inventory[i]
+                self.renderText(item.name,
+                                17 * self.relativeSize + i * 17 * self.relativeSize + 0.25 * self.relativeSize,
+                                self.relativeSize * 5.5, int(self.relativeSize*1.6), bold=True)
+        if self.player.maxHealth / 2 >= self.player.health > self.player.maxHealth/4:
             bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
             self.screen.blit(bgHurt, (0, 0))
-        if self.player.health <= self.player.maxHealth/4:
-            if self.bloodOnScreen < 255:
-                self.bloodOnScreen += 1
-            bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png",self.settings.w, self.settings.h).convert_alpha()
-            self.screen.blit(bgHurtRealBad, (0, 0))
-        if self.bloodOnScreen > 0 and self.player.health > self.player.maxHealth/4:
-            self.bloodOnScreen -= 1
-            bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
-                                          self.settings.h).convert_alpha()
-            bgBlood.set_alpha(self.bloodOnScreen)
-            self.screen.blit(bgBlood, (0, 0))
+        if self.player.health <= self.player.maxHealth/4 and not self.settings.showBloodOnScreen:
+            bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
+            self.screen.blit(bgHurt, (0, 0))
+        if self.settings.showBloodOnScreen:
+            if self.player.health <= self.player.maxHealth / 4:
+                if self.bloodOnScreen < 255:
+                    self.bloodOnScreen += 1
+                bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png", self.settings.w,
+                                              self.settings.h).convert_alpha()
+                self.screen.blit(bgHurtRealBad, (0, 0))
+            if self.bloodOnScreen > 0 and self.player.health > self.player.maxHealth / 4:
+                self.bloodOnScreen -= 1
+                bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
+                                        self.settings.h).convert_alpha()
+                bgBlood.set_alpha(self.bloodOnScreen)
+                self.screen.blit(bgBlood, (0, 0))
 
         if self.settings.showFps:
             self.renderText(str(math.floor(self.clock.get_fps())), 1, 1)
     def update(self):
-        self.map.entities.append(ItemEntity(150, 200, self.entityManager, textureAtlas("assets/items.png", 16, 0, 16, 16,
-                                                                                True,
-                                                                                2 * self.objectManager.relativeSize / 9.9),
-                                        ".22 Broomhandle", 1, 1))
+        self.map.entities.append(ItemEntity(150, 100, self.entityManager, self.items.items[0]))
+        self.map.entities.append(ItemEntity(150, 200, self.entityManager, self.items.items[1]))
+        self.map.entities.append(ItemEntity(150, 300, self.entityManager, self.items.items[2]))
+        self.map.entities.append(ItemEntity(150, 400, self.entityManager, self.items.items[3]))
+        self.map.entities.append(ItemEntity(150, 500, self.entityManager, self.items.items[4]))
+        self.map.entities.append(ItemEntity(150, 600, self.entityManager, self.items.items[5]))
+        self.map.entities.append(ItemEntity(150, 700, self.entityManager, self.items.items[6]))
+        self.map.entities.append(ItemEntity(150, 800, self.entityManager, self.items.items[7]))
+        self.map.entities.append(ItemEntity(150, 900, self.entityManager, self.items.items[9]))
+        self.map.entities.append(Entity(150, 200, self.entityManager, 64, 64,
+                                        textureAtlas("assets/templaet.png", 0, 0, 32, 32,
+                                                     True, 2 * self.relativeSize / 10)))
+        self.settings.playMusic("assets/placeholdermusic/Dogs.mp3", 100)
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -113,11 +142,11 @@ class Game:
             self.screen.fill((0,0,0))
             self.gameTick()
 
-            self.keyboardInput()
-            self.mouseInput()
             for tile in self.map.floorTiles:
                 tile.draw()
             for entity in self.map.entities:
+                if entity.isDead:
+                    self.map.entities.remove(entity)
                 entity.draw()
 
             self.player.draw()
@@ -126,6 +155,8 @@ class Game:
                 object.draw()
             self.ingameGui()
 
+            self.keyboardInput()
+            self.mouseInput()
             self.clock.tick(self.fpsCap)
             pygame.display.flip()
 
@@ -140,39 +171,65 @@ class Game:
         if keys[pygame.K_DOWN] or keys[pygame.K_s]: self.player.yd = self.player.moveSpeed*self.relativeSize/10
 
     def mouseInput(self):
-        pos = pygame.mouse.get_pos()
+        mouse = pygame.mouse
+        pos = mouse.get_pos()
+        mouse.set_visible(False)
         x = pos[0]
         y = pos[1]
+        showCrosshair = True
+
+        buttons = mouse.get_pressed()
+        if buttons[0]:
+            middleXPlayer = self.player.x + self.player.texture.get_rect()[2] - self.player.size * self.relativeSize / 10
+            middleYPlayer = self.player.y + self.player.hitbox[1]/2
+            ray = Ray(middleXPlayer, middleYPlayer, x, y).rayCast(1, self.relativeSize, self.map, Entity, self.screen)
+            if ray and isinstance(ray, Entity):
+                pygame.draw.circle(self.screen, (255, 0, 0), (x, y), 10)
+                print(ray.health, ray.armor)
+                ray.hurt(self.player, 15, 0, self.player.xd, self.player.yd)
+
         for entity in self.map.entities:
             if isinstance(entity, ItemEntity):
                 if entity.x <= x <= entity.x + entity.hitbox[0] and entity.y <= y <= entity.y + entity.hitbox[1]:
-                    middlePlayer = (self.player.texture.get_rect()[2]-self.player.size*self.relativeSize/10)/2
-                    middleEntity = (entity.texture.get_rect()[2]-entity.size*self.relativeSize/10)/2
-                    c1 = (self.player.x + middlePlayer - entity.x - middleEntity) ** 2
-                    c2 = (self.player.y + self.player.hitbox[1]/2 - entity.x - entity.hitbox[1]/2) ** 2
-                    if math.fabs(math.sqrt(c1 + c2)) < self.relativeSize*15:
-                        print("YEAH")
+                    middlePlayer = (self.player.texture.get_rect()[2]-self.player.size*self.relativeSize/10)
+                    middleEntity = (entity.texture.get_rect()[2]-entity.size*self.relativeSize/10)
+                    c1 = (math.fabs(self.player.x + middlePlayer) - math.fabs(entity.x + middleEntity)) ** 2
+                    c2 = (math.fabs(self.player.y + self.player.hitbox[1]/2) - math.fabs(entity.y + entity.hitbox[1]/2)) ** 2
+                    if math.fabs(math.sqrt(c1 + c2)) < self.relativeSize*10:
+
+                        textTest = self.ghostText(entity.item.name,
+                                               int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
+                        pygame.draw.rect(self.screen, (0, 0, 0), (x+self.relativeSize*2, y-self.relativeSize*6,
+                                                                  textTest.get_rect()[2], self.relativeSize*4))
+                        self.renderExistingText(textTest,x+self.relativeSize*2, y-self.relativeSize*6)
+                        if buttons[0]:
+                            if self.player.addToInventory(entity.item):
+                                self.map.entities.remove(entity)
+                                self.settings.playSound("assets/sounds/bp.ogg", 70)
                     else:
-                        print("too far")
-                        print(math.fabs(math.sqrt(c1 + c2)), self.relativeSize*15)
+                        showCrosshair = False
+                        cantGrab = textureLoader("assets/cantGrab.png", self.relativeSize*5,self.relativeSize*5)
+                        self.screen.blit(cantGrab, (x-self.relativeSize*2.5, y-self.relativeSize*2.5))
+                        #print(x, y)
+        if showCrosshair:
+            crosshair = textureLoader("assets/crosshair.png", self.relativeSize * 5, self.relativeSize * 5)
+            self.screen.blit(crosshair, (x - self.relativeSize * 2.5, y - self.relativeSize * 2.5))
 
 
-    def renderText(self, string, x, y, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True):
+    def ghostText(self, string, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True, bold=False):
         pygame.font.init()
         if systemFont:
-            my_font = pygame.font.SysFont(font, size)
+            my_font = pygame.font.SysFont(font, size, bold=bold)
         else:
             my_font = pygame.font.Font(font, size)
         text_surface = my_font.render(string, alias, color)
+        return text_surface
+
+    def renderText(self, string, x, y, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True, bold=False):
+        text_surface = self.ghostText(string, size, font, color, alias, systemFont, bold)
         self.screen.blit(text_surface, (x, y))
 
-    def renderTextWOutline(self, string, x, y, size=30, font='Arial', color=(255, 255, 255), alias=True, systemFont=True, outlineWith=1, outlineColor=(0, 0, 0)):
-        pygame.font.init()
-        if systemFont:
-            my_font = pygame.font.SysFont(font, size)
-        else:
-            my_font = pygame.font.Font(font, size)
-        text_surface = my_font.render(string, alias, color)
+    def renderExistingText(self, text_surface, x, y):
         self.screen.blit(text_surface, (x, y))
 
 
@@ -195,6 +252,12 @@ class Settings:
             playableSound = pygame.mixer.Sound(sound)
             playableSound.set_volume(self.soundVolume/100 * volume/100)
             playableSound.play()
+
+    def playMusic(self, track, volume):
+        if self.music:
+            pygame.mixer.music.load(track)
+            pygame.mixer.music.set_volume(self.musicVolume/100 * volume/100)
+            pygame.mixer.music.play(-1)
 
     def save(self):
         settingsFile = json.dumps({
@@ -239,6 +302,7 @@ class ObjectManager(Manager):
         self.screen = screen
         self.map = gameMap
         self.relativeSize = relativeSize
+        self.items = None
 
 class EntityManager(ObjectManager):
     def __init__(self, screen, relativeSize, settings, gameMap):
@@ -251,6 +315,7 @@ class Map:
         self.objects = []
         self.entities = []
         self.floorTiles = []
+        self.rays = []
         self.player = player
         self.deathCount = 0
         self.killCount = 0
@@ -259,11 +324,14 @@ class Map:
         self.roomsLeftTillNextLayer = 0
         self.objectManager = objectManager
         self.entityManager = entityManager
+        self.items = None
 
     def save(self):
         saveFile = json.dumps({
             "objects": self.objects,
             "entities": self.entities,
+            "floor": self.floorTiles,
+            "rays": self.rays,
             "player": self.player,
             "deathCount": self.deathCount,
             "killCount": self.killCount,
@@ -387,7 +455,7 @@ class Attribute:
 #
 
 class GameObject:
-    def __init__(self, x, y, objectManager, size, texture, indestructible=True):
+    def __init__(self, x, y, objectManager, size, texture, indestructible=True, durability=20):
         self.x = x
         self.y = y
         self.size = size
@@ -398,14 +466,16 @@ class GameObject:
         self.indestructible = indestructible
         self.hardness = 0
         self.explosionResistance = 0
+        self.durability = durability
 
     def setHitbox(self, x, y):
         self.hitbox = (x*self.objectManager.relativeSize/10,y*self.objectManager.relativeSize/10)
 
-    def setStates(self, hardness=1, explosionResistance=0):
+    def setStates(self, hardness=1, explosionResistance=0, durability=100):
         if not self.indestructible:
             self.hardness = hardness
             self.explosionResistance = explosionResistance
+            self.durability = durability
 
     def draw(self):
         self.objectManager.screen.blit(self.texture, (self.x, self.y))
@@ -449,7 +519,7 @@ class Entity(GameObject):
         self.maxHealth = 100
         self.isDead = False
         self.damageResistance = 10
-        self.armor = 100
+        self.armor = 0
         self.debuffs = []
         self.buffs = []
         self.canBeDamaged = True
@@ -462,25 +532,28 @@ class Entity(GameObject):
         self.drop = []
 
     def hurt(self,attacker,damage,cooldown,xd,yd):
-        if self.hurtTime > 0: return
-        newDamage = (damage * (self.damageResistance/100) + math.fabs(((attacker.xd+attacker.yd)/2)/10))
+        if self.canBeDamaged:
+            if self.hurtTime > 0: return
+            newDamage = (damage * (self.damageResistance / 100) + math.fabs(((attacker.xd + attacker.yd) / 2) / 10))
 
-        if self.armor > 0:  newDamage *= (self.armor*0.1)/100
-        if newDamage > self.health:
-            self.health = 0
-            self.isDead = True
-            self.xd += xd*2
-            self.yd += yd*2
-        else:
-
-            self.hurtTime = cooldown
-            self.health -= newDamage
-            self.xd += xd
-            self.yd += yd
+            if self.armor > 0:  newDamage *= (self.armor * 0.1) / 100
+            if newDamage > self.health:
+                self.health = 0
+                self.isDead = True
+                self.xd += xd * 2
+                self.yd += yd * 2
+            else:
+                if self.armor > 0:
+                    self.armor -= newDamage / 2
+                elif self.armor < 0:
+                    self.armor = 0
+                self.hurtTime = cooldown
+                self.health -= newDamage
+                self.xd += xd
+                self.yd += yd
 
     def heal(self,amount):
         if self.health + amount > self.maxHealth:
-            self.objectManager.settings.playSound("assets/sounds/draw1.ogg",100)
             self.health = self.maxHealth
         else:
             self.health += amount
@@ -513,18 +586,128 @@ class Entity(GameObject):
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
                              (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 
+class Ray:
+    def __init__(self, x0, y0, x1, y1):
+        self.x0 = x0
+        self.y0 = y0
+        self.x1 = x1
+        self.y1 = y1
+
+    def rayCast(self, stepSize, relativeSize, map, entityClass, screen):
+        stepSize *= relativeSize
+        angle = math.atan2(self.y1 - self.y0, self.x1 - self.x0)
+        c1 = (self.x0 - self.x1) ** 2
+        c2 = (self.y0 - self.y1) ** 2
+        d1 = math.sqrt(c1 + c2)
+        d2 = d1/stepSize
+        cos = math.cos(angle) * stepSize,
+        sin = math.sin(angle) * stepSize,
+        for i in range(math.floor(d2)):
+            sx = self.x0 + cos[0] * i
+            sy = self.y0 + sin[0] * i
+            for object in map.objects:
+                if object.x < sx < object.x + object.hitbox[0] and object.y < sy < object.y + object.hitbox[1]:
+                    pygame.draw.circle(screen, (0, 255, 255), (sx, sy), 5)
+                    return object
+            for entity in map.entities:
+                if (isinstance(entity, entityClass) and entity.x < sx < entity.x + entity.hitbox[0] and
+                        entity.y < sy < entity.y + entity.hitbox[1]):
+                    pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 5)
+                    return entity
+
+            pygame.draw.circle(screen, (255, 0, 0), (sx, sy), 5)
+        return None
+
+
 class ItemEntity(Entity):
-    def __init__(self, x, y, entityManager, texture, name, itemId, amount):
-        super().__init__(x,y,entityManager,32, 32,texture)
+    def __init__(self, x, y, entityManager, itemClass):
+
+        super().__init__(x,y,entityManager,32, 32, itemClass.texture)
+        self.canBeDamaged = False
+        self.item = itemClass
+
+class Items:
+    def __init__(self, map, objectManager):
+        self.items = [UsableItem(map, textureAtlas("assets/items.png", 16, 0, 16, 16,True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 ".22 Broomhandle", 0, 1, 100),
+                      UsableItem(map, textureAtlas("assets/items.png", 32, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "Caldwell Handcannon", 1, 1, 50),
+                      UsableItem(map, textureAtlas("assets/items.png", 48, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "Parabellum", 2, 1, 250),
+                      UsableItem(map, textureAtlas("assets/items.png", 64, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "Taurus 689", 3, 1, 150),
+                      UsableItem(map, textureAtlas("assets/items.png", 80, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "HW 9 ST", 4, 1, 150),
+                      UsableItem(map, textureAtlas("assets/items.png", 96, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "vz. 61 Scorpion", 5, 1, 200),
+                      UsableItem(map, textureAtlas("assets/items.png", 112, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "MP5k", 6, 1, 300),
+                      UsableItem(map, textureAtlas("assets/items.png", 128, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "CBJ-MS PDW", 7, 1, 250),
+                      UsableItem(map, textureAtlas("assets/items.png", 0, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "Med Kit", 8, 1, 1),
+                      UsableItem(map, textureAtlas("assets/items.png", 176, 0, 16, 16, True,
+                                                   2 * objectManager.relativeSize / 9.9),
+                                 "Riot Shield", 9, 1, 50),
+                      ]
+
+class Item:
+    def __init__(self, gameMap, texture, name, itemId, amount):
+        self.map = gameMap
+        self.texture = texture
         self.name = name
         self.itemId = itemId
         self.amount = amount
+
+class UsableItem(Item):
+    def __init__(self, gameMap, texture, name, itemId, amount, durability):
+        super().__init__(gameMap,texture,name,itemId,amount)
+        self.durability = durability
+
+    def onUse(self):
+        if self.durability - 1 <= 0:
+            self.amount -= 1
+        else:
+            self.durability -= 1
+
+class MeleeItem(UsableItem):
+    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, attackRange, playerAnimSequence, cooldown):
+        super().__init__(gameMap, texture, name, itemId, amount, durability)
+        self.attackDamage = attackDamage
+        self.attackRange = attackRange
+        self.playerAnimSequence = playerAnimSequence
+        self.cooldown = cooldown
+
+    def onUse(self):
+        super().onUse()
 
 
 class Player(Entity):
     def __init__(self, x, y, entityManager, size, texture):
         super().__init__(x,y,entityManager,size, 40,texture)
-        self.inventory = [[],[],[],[]]
+        self.inventory = []
+
+    def addToInventory(self, item):
+        if len(self.inventory) + 1 < 5:
+            self.inventory.extend([item])
+            return True
+        return False
+
+    def dropFromInventory(self, slot):
+        item = self.inventory[slot]
+        self.inventory.remove(item)
+        self.objectManager.map.entities.append(item)
+        return item
+
 
 
 Game(1920,1080)
