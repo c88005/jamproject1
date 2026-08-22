@@ -7,8 +7,6 @@ import datetime
 from os import path
 from os.path import isfile, join
 
-from arcade import print_timings
-
 
 def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
     newTexture = pygame.image.load(texture)
@@ -21,6 +19,11 @@ def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
     else:
         return newTexture.subsurface((x0, y0, x1, y1))
 
+
+def rotateAtCenter(image, angle, x, y):
+    rotated_image = pygame.transform.rotate(image, angle)
+
+    return rotated_image
 
 def textureLoader(texture, sizeX=1, sizeY=1):
     newTexture = pygame.image.load(texture)
@@ -40,8 +43,8 @@ class Game:
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
         self.entityManager = EntityManager(self.screen, self.relativeSize, self.settings, None)
         self.player = Player(w/2, h/2, None, 63,
-                             textureAtlas("assets/templaet.png", 0,0,32,32,
-                                               True, 2*self.relativeSize/10))
+                             textureAtlas("assets/player.png", 0,0,32,32,
+                                               True, 3*self.relativeSize/10))
         self.bloodOnScreen = 0
         self.paused = False
         self.map.player = self.player
@@ -91,8 +94,11 @@ class Game:
         self.renderText(str(self.player.maxHealth), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
                         int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
 
-        for i in range(4):
-            slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
+        for i in range(self.player.inventorySize):
+            if self.player.selectedSlot == i:
+                slot = textureLoader("assets/inventorySlotSelected.png", self.relativeSize * 16, self.relativeSize * 8)
+            else:
+                slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
             self.screen.blit(slot, (17*self.relativeSize+i*17*self.relativeSize, 0))
             self.renderText("SLOT - " +str(i+1), 17*self.relativeSize+i*17*self.relativeSize + 4.5*self.relativeSize,
                             self.relativeSize * 0.85, int(self.relativeSize*1.6), bold=True)
@@ -124,6 +130,7 @@ class Game:
         if self.settings.showFps:
             self.renderText(str(math.floor(self.clock.get_fps())), 1, 1)
     def update(self):
+        print("version: 21.08.26 PRE RELEASE")
         self.map.entities.append(ItemEntity(150, 100, self.entityManager, self.items.items[0]))
         self.map.entities.append(ItemEntity(150, 200, self.entityManager, self.items.items[1]))
         self.map.entities.append(ItemEntity(150, 300, self.entityManager, self.items.items[2]))
@@ -132,23 +139,28 @@ class Game:
         self.map.entities.append(ItemEntity(150, 600, self.entityManager, self.items.items[5]))
         self.map.entities.append(ItemEntity(150, 700, self.entityManager, self.items.items[6]))
         self.map.entities.append(ItemEntity(150, 800, self.entityManager, self.items.items[7]))
-        self.map.entities.append(ItemEntity(150, 900, self.entityManager, self.items.items[9]))
-        self.map.entities.append(Entity(150, 200, self.entityManager, 64, 64,
+        self.map.entities.append(ItemEntity(200, 350, self.entityManager, self.items.items[9]))
+        self.map.entities.append(EntityHostileBase(150, 200, self.entityManager, 64, 64,
                                         textureAtlas("assets/templaet.png", 0, 0, 32, 32,
                                                      True, 2 * self.relativeSize / 10)))
-        self.settings.playMusic("assets/placeholdermusic/Dogs.mp3", 100)
+        self.settings.playMusic("assets/sounds/music/Env1.ogg")
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
+                if event.type == pygame.MOUSEWHEEL:
+                    if event.y > 0:
+                        self.player.changeSlot(-1)
+                    if event.y < 0:
+                        self.player.changeSlot(1)
+                if event.type == pygame.CONTROLLER_BUTTON_A:
+                    print("A")
             self.screen.fill((0,0,0))
             self.gameTick()
 
             for tile in self.map.floorTiles:
                 tile.draw()
             for entity in self.map.entities:
-                if entity.isDead:
-                    self.map.entities.remove(entity)
                 entity.draw()
 
             self.player.draw()
@@ -164,13 +176,42 @@ class Game:
 
     def keyboardInput(self):
         keys = pygame.key.get_pressed()
+        self.player.movementRotation = 0
         if keys[pygame.K_ESCAPE]: self.running = False
         if keys[pygame.K_f]: self.player.heal(1)
         if keys[pygame.K_g]: self.player.hurt(self.player, 100,  0, float(random.randint(-100,100))/100, float(random.randint(-100,100))/100)
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]: self.player.xd = -self.player.moveSpeed*self.relativeSize/10
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]: self.player.xd = self.player.moveSpeed*self.relativeSize/10
-        if keys[pygame.K_UP] or keys[pygame.K_w]: self.player.yd = -self.player.moveSpeed*self.relativeSize/10
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]: self.player.yd = self.player.moveSpeed*self.relativeSize/10
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            self.player.xd = -self.player.moveSpeed*self.relativeSize/10
+            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
+            if self.player.getSelectedItem() == None:
+                anim = self.player.walkingAnim.play()
+                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                    True, 3 * self.objectManager.relativeSize / 10)
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            self.player.xd = self.player.moveSpeed*self.relativeSize/10
+            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
+            if self.player.getSelectedItem() == None:
+                anim = self.player.walkingAnim.play()
+                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                    True, 3 * self.objectManager.relativeSize / 10)
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            self.player.yd = -self.player.moveSpeed*self.relativeSize/10
+            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
+            if self.player.getSelectedItem() == None:
+                anim = self.player.walkingAnim.play()
+                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                    True, 3 * self.objectManager.relativeSize / 10)
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            self.player.yd = self.player.moveSpeed*self.relativeSize/10
+            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
+            if self.player.getSelectedItem() == None:
+                anim = self.player.walkingAnim.play()
+                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                    True, 3 * self.objectManager.relativeSize / 10)
+        if keys[pygame.K_1]: self.player.selectedSlot = 0
+        if keys[pygame.K_2]: self.player.selectedSlot = 1
+        if keys[pygame.K_3]: self.player.selectedSlot = 2
+        if keys[pygame.K_4]: self.player.selectedSlot = 3
 
     def mouseInput(self):
         mouse = pygame.mouse
@@ -182,19 +223,22 @@ class Game:
 
         buttons = mouse.get_pressed()
         if buttons[0]:
-            middleXPlayer = self.player.x + self.player.texture.get_rect()[2] - self.player.size * self.relativeSize / 10
+            if self.player.getSelectedItem() is not None:
+                item = self.player.getSelectedItem()
+                item.onUse()
+            '''middleXPlayer = self.player.x + self.player.texture.get_rect()[2] - self.player.size * self.relativeSize / 10
             middleYPlayer = self.player.y + self.player.hitbox[1]/2
-            ray = Ray(middleXPlayer, middleYPlayer, x, y).rayCast(1, self.relativeSize, self.map, Entity, self.screen)
+            ray = Ray(middleXPlayer, middleYPlayer, x, y).rayCast(1, self.relativeSize, self.map, Entity, ItemEntity, self.screen)
             if ray and isinstance(ray, Entity):
                 pygame.draw.circle(self.screen, (255, 0, 0), (x, y), 10)
                 print(ray.health, ray.armor)
-                ray.hurt(self.player, 15, 0, self.player.xd, self.player.yd)
+                ray.hurt(self.player, 15, 0, self.player.xd, self.player.yd)'''
 
         for entity in self.map.entities:
             if isinstance(entity, ItemEntity):
                 if entity.x <= x <= entity.x + entity.hitbox[0] and entity.y <= y <= entity.y + entity.hitbox[1]:
-                    middlePlayer = (self.player.texture.get_rect()[2]-self.player.size*self.relativeSize/10)
-                    middleEntity = (entity.texture.get_rect()[2]-entity.size*self.relativeSize/10)
+                    middlePlayer = (self.player.size*self.relativeSize/10/2)
+                    middleEntity = (entity.size*self.relativeSize/10/2)
                     c1 = (math.fabs(self.player.x + middlePlayer) - math.fabs(entity.x + middleEntity)) ** 2
                     c2 = (math.fabs(self.player.y + self.player.hitbox[1]/2) - math.fabs(entity.y + entity.hitbox[1]/2)) ** 2
                     if math.fabs(math.sqrt(c1 + c2)) < self.relativeSize*10:
@@ -255,10 +299,10 @@ class Settings:
             playableSound.set_volume(self.soundVolume/100 * volume/100)
             playableSound.play()
 
-    def playMusic(self, track, volume):
+    def playMusic(self, track):
         if self.music:
             pygame.mixer.music.load(track)
-            pygame.mixer.music.set_volume(self.musicVolume/100 * volume/100)
+            pygame.mixer.music.set_volume(self.musicVolume/100)
             pygame.mixer.music.play(-1)
 
     def save(self):
@@ -318,6 +362,7 @@ class Map:
         self.entities = []
         self.floorTiles = []
         self.rays = []
+        self.effects = []
         self.player = player
         self.deathCount = 0
         self.killCount = 0
@@ -351,7 +396,6 @@ class Map:
 
         self.createFloor(0,0,32,32)
         wallsAmount = rng.randint(1, 7)
-        print(wallsAmount)
         for i in range(wallsAmount):
             self.createWall(rng, 128, 0, 32, 32)
         self.createBounds(160, 0, 32, 32)
@@ -415,6 +459,12 @@ class AABB:
                     objectA.x < objectB.x + objectB.hitbox[0] and
                     objectA.y < objectB.y + objectB.hitbox[1] and
                     objectA.y + objectA.hitbox[1] > objectB.y)
+
+    def overlapTuples(self, objectA, objectB):
+        return (objectA[2] > objectB[0] and
+                    objectA[0] < objectB[2] and
+                    objectA[1] < objectB[3] and
+                    objectA[3] > objectB[1])
 
     def xClip(self, objectA, objectB, xa):
         if xa > 0:
@@ -515,6 +565,7 @@ class TableObject(GameObject):
 class Entity(GameObject):
     def __init__(self, x, y, entityManager, size, size2, texture):
         super().__init__(x,y,entityManager,size,texture,False)
+        self.direction = 0
         self.size = size2
         self.size2 = size
         self.health = 100
@@ -535,8 +586,10 @@ class Entity(GameObject):
 
     def hurt(self,attacker,damage,cooldown,xd,yd):
         if self.canBeDamaged:
-            if self.hurtTime > 0: return
-            newDamage = (damage * (self.damageResistance / 100) + math.fabs(((attacker.xd + attacker.yd) / 2) / 10))
+            if self.hurtTime > 0:
+                self.hurtTime -= 1
+                return
+            newDamage = (damage * ((100-self.damageResistance) / 100) + ((math.fabs(attacker.xd) + math.fabs(attacker.yd)) / 2) / 10)
 
             if self.armor > 0:  newDamage *= (self.armor * 0.1) / 100
             if newDamage > self.health:
@@ -582,12 +635,68 @@ class Entity(GameObject):
             self.yd = 0.0
 
     def draw(self):
-        self.objectManager.screen.blit(self.texture, (self.x - (self.texture.get_rect()[2]-self.size*self.objectManager.relativeSize/10)/2, self.y))
+        self.objectManager.screen.blit(self.texture, (self.x - (self.texture.get_rect()[2]-self.size*self.objectManager.relativeSize/10)/2,
+                                                      self.y - (self.texture.get_rect()[3]-self.size2*self.objectManager.relativeSize/10)/2))
         self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
         if self.objectManager.settings.showAABB:
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
                              (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 
+class EntityHostileBase(Entity):
+    def __init__(self, x, y, entityManager, size, size2, texture):
+        super().__init__(x, y, entityManager, 30, 30, texture)
+
+    def update(self):
+        super().update()
+        if not self.isDead:
+            self.AI()
+
+    def AI(self):
+        player = self.objectManager.map.player
+        entityCX = self.x + self.hitbox[0] / 2
+        entityCY = self.y + self.hitbox[1] / 2
+        playerCX = player.x + player.hitbox[0] / 2
+        playerCY = player.y + player.hitbox[1] / 2
+
+        stepSize = self.moveSpeed * self.objectManager.relativeSize / 10
+
+        angle = math.atan2(playerCY - entityCY, playerCX - entityCX)
+        desiredXD = math.cos(angle) * stepSize
+        desiredYD = math.sin(angle) * stepSize
+
+        if hasattr(self, 'xd') and hasattr(self, 'yd'):
+
+            if self.xd == 0.0 and abs(desiredXD) > 0.01:
+                desiredXD = 0.0
+
+                if playerCY > entityCY:
+                    desiredYD = stepSize
+                else:
+                    desiredYD = -stepSize
+
+                desiredXD += (1.0 if playerCX > entityCX else -1.0) * (self.objectManager.relativeSize / 50)
+
+            elif self.yd == 0.0 and abs(desiredYD) > 0.01:
+                desiredYD = 0.0
+
+                if playerCX > entityCX:
+                    desiredXD = stepSize
+                else:
+                    desiredXD = -stepSize
+
+                desiredYD += (1.0 if playerCY > entityCY else -1.0) * (self.objectManager.relativeSize / 50)
+
+        distance = math.sqrt((playerCX - entityCX) ** 2 + (playerCY - entityCY) ** 2)
+        if distance > stepSize:
+            self.xd = desiredXD
+            self.yd = desiredYD
+        else:
+            self.xd = 0.0
+            self.yd = 0.0
+
+class Effect:
+    def __init__(self):
+        pass
 class Ray:
     def __init__(self, x0, y0, x1, y1):
         self.x0 = x0
@@ -595,7 +704,7 @@ class Ray:
         self.x1 = x1
         self.y1 = y1
 
-    def rayCast(self, stepSize, relativeSize, map, entityClass, screen):
+    def rayCast(self, stepSize, relativeSize, map, entityClass, entityExcluded, screen):
         stepSize *= relativeSize
         angle = math.atan2(self.y1 - self.y0, self.x1 - self.x0)
         c1 = (self.x0 - self.x1) ** 2
@@ -612,6 +721,7 @@ class Ray:
                     pygame.draw.circle(screen, (0, 255, 255), (sx, sy), 5)
                     return object
             for entity in map.entities:
+                if isinstance(entity, entityExcluded): continue
                 if (isinstance(entity, entityClass) and entity.x < sx < entity.x + entity.hitbox[0] and
                         entity.y < sy < entity.y + entity.hitbox[1]):
                     pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 5)
@@ -619,6 +729,8 @@ class Ray:
 
             pygame.draw.circle(screen, (255, 0, 0), (sx, sy), 5)
         return None
+
+
 
 
 class ItemEntity(Entity):
@@ -657,9 +769,11 @@ class Items:
                       UsableItem(map, textureAtlas("assets/items.png", 0, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "Med Kit", 8, 1, 1),
-                      UsableItem(map, textureAtlas("assets/items.png", 176, 0, 16, 16, True,
+                      MeleeItem(map, textureAtlas("assets/items.png", 176, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "Riot Shield", 9, 1, 50),
+                                 "Riot Shield", 9, 1, 50, 40, 2.5,
+                                [], 1000, "assets/sounds/bluntHeavy","assets/sounds/heavySwing",
+                                3, 1),
                       ]
 
 class Item:
@@ -682,24 +796,106 @@ class UsableItem(Item):
             self.durability -= 1
 
 class MeleeItem(UsableItem):
-    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, attackRange, playerAnimSequence, cooldown):
+    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, attackRange, playerAnimSequence, cooldown, hitSound, swingSound, swingSoundRandom, hitSoundRandom):
         super().__init__(gameMap, texture, name, itemId, amount, durability)
         self.attackDamage = attackDamage
         self.attackRange = attackRange
         self.playerAnimSequence = playerAnimSequence
+        self.hitSound = hitSound
+        self.swingSound = swingSound
+        self.swingSoundRandom = swingSoundRandom
+        self.hitSoundRandom = hitSoundRandom
         self.cooldown = cooldown
+        self.currentTime = pygame.time.get_ticks()
 
     def onUse(self):
         super().onUse()
+        if pygame.time.get_ticks() - self.currentTime >= self.cooldown:
+            player = self.map.player
+            self.currentTime = pygame.time.get_ticks()
+            player.objectManager.settings.playSound(f"{self.swingSound}{random.randint(1, self.swingSoundRandom)}.ogg",
+                                                    80)
+            for entity in self.map.entities:
+                if isinstance(entity, ItemEntity): continue
+                pos = pygame.mouse.get_pos()
+                angle = math.atan2(pos[1] - player.y, pos[0] - player.x)
+                sin = math.sin(angle) * self.attackRange * player.objectManager.relativeSize
+                cos = math.cos(angle) * self.attackRange * player.objectManager.relativeSize
 
+                range = self.attackRange * player.objectManager.relativeSize
+                playerSize = player.size * player.objectManager.relativeSize / 10
+                playerSize2 = player.size2 * player.objectManager.relativeSize / 10
+
+                playerPos = (player.x + cos - range + playerSize / 2, player.y + sin - range + playerSize / 2,
+                             player.x + playerSize + cos + range + playerSize / 2,
+                             player.y + playerSize2 + sin + range + playerSize / 2)
+                entityPos = (entity.x, entity.y, entity.x + entity.hitbox[0], entity.y + entity.hitbox[0])
+                pygame.draw.rect(self.map.objectManager.screen, "#FFFFFF",
+                                 (playerPos[0], playerPos[1], playerSize + range, playerSize2 + range), 2)
+
+                if AABB().overlapTuples(playerPos, entityPos):
+                    entity.objectManager.settings.playSound(f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
+                                                            80)
+                    entity.hurt(player, self.attackDamage, 0, cos, sin)
+
+
+class AnimationSequence:
+    def __init__(self, sequence, timeSequence):
+        self.sequence = sequence
+        self.timeSequence = timeSequence
+        self.currentTime = pygame.time.get_ticks()
+        self.frame = 0
+
+    def play(self):
+        time = self.timeSequence[self.frame] if isinstance(self.timeSequence, list) else self.timeSequence
+        if pygame.time.get_ticks() - self.currentTime >= time:
+            self.currentTime = pygame.time.get_ticks()
+            if self.frame + 1 >= len(self.sequence) :
+                self.frame = 0
+            else:
+                self.frame += 1
+
+            return self.sequence[self.frame]
+        return self.sequence[self.frame]
 
 class Player(Entity):
     def __init__(self, x, y, entityManager, size, texture):
-        super().__init__(x,y,entityManager,size, 40,texture)
+        super().__init__(x,y,entityManager,30, 30,texture)
         self.inventory = []
+        self.originalTexture = texture
+        self.inventorySize = 4
+        self.selectedSlot = 0
+        self.movementRotation = 0
+        self.walkingAnim = AnimationSequence([ (32, 0, 32, 32), (0, 0, 32, 32), (64, 0, 32, 32), (0, 0, 32, 32)], 125)
+
+    def update(self):
+        super().update()
+        rotation = math.atan2(pygame.mouse.get_pos()[1] - self.y-self.hitbox[1]/2, pygame.mouse.get_pos()[0] - self.x-self.hitbox[0]/2)
+
+        self.texture = rotateAtCenter(self.originalTexture, math.degrees(-rotation)-90+self.movementRotation, self.x, self.y)
+        for item in self.inventory:
+            if item.durability <= 0:
+                self.inventory.remove(item)
+
+    def move(self, xa, ya):
+
+        super().move(xa, ya)
+
+    def changeSlot(self, value):
+        if self.selectedSlot + value > self.inventorySize-1:
+            self.selectedSlot = 0
+        elif self.selectedSlot + value < 0:
+            self.selectedSlot = self.inventorySize-1
+        else:
+            self.selectedSlot += value
+
+    def getSelectedItem(self):
+        if len(self.inventory)-1 >= self.selectedSlot:
+            return self.inventory[self.selectedSlot]
+        return None
 
     def addToInventory(self, item):
-        if len(self.inventory) + 1 < 5:
+        if len(self.inventory) + 1 <= self.inventorySize:
             self.inventory.extend([item])
             return True
         return False
@@ -712,4 +908,5 @@ class Player(Entity):
 
 
 
+#Game(800,450)
 Game(1920,1080)

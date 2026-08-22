@@ -2,23 +2,21 @@
 
 random damage
 stats changing
-rooms/maps chnaging dynamically
+--------------------rooms/maps chnaging dynamically
 bald
 hordes on a map
 random events
-morale _ DIHCAYING WINTER SLOP
 armor stuff decaying ))))
 flashing lights
 random skills that appear and disappear
-radiation
 random mobs that do some evil shit
 evil scary dillar
 conflicting stats
 final boss too hard
 resources being scarse and not at the same time
-complex combat like in minecraft but EVEN WORSE
+---------------------complex combat like in minecraft but EVEN WORSE
 bald
 NO AI SLOP
 GUNS
 MELEES
-map seed changing every day
+---------------------map seed changing every day
