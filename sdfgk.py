@@ -2,10 +2,8 @@ import math
 import json
 import random
 import pygame
-from os import listdir
 import datetime
 from os import path
-from os.path import isfile, join
 
 
 def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
@@ -37,7 +35,6 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
         self.screen = pygame.display.set_mode((w, h))
-        pygame.FULLSCREEN = True
         self.relativeSize = self.settings.w / 100
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
@@ -67,6 +64,7 @@ class Game:
             self.settings.save()
 
         pygame.mixer.init()
+        pygame.mixer.set_num_channels(32)
         self.map.switchRoom()
 
         self.update()
@@ -82,10 +80,11 @@ class Game:
             entity.update()
 
     def ingameGui(self):
-        bg1 =pygame.Surface((20*self.relativeSize, 10*self.relativeSize))
+        bg1 =pygame.Surface((30*self.relativeSize, 10*self.relativeSize))
         bg1.set_alpha(100)
         healthIcon = textureLoader("assets/health.png", 10*self.relativeSize, 10*self.relativeSize)
         self.screen.blit(bg1,(0,self.settings.h-10*self.relativeSize))
+        self.screen.blit(bg1, (70* self.relativeSize, self.settings.h - 10 * self.relativeSize))
         self.screen.blit(healthIcon,(0,self.settings.h-10*self.relativeSize))
         pygame.draw.rect(self.screen, "#ffffff",(10.5*self.relativeSize, self.settings.h-4*self.relativeSize,
                                                  self.relativeSize*7, self.relativeSize/3.5))
@@ -139,7 +138,9 @@ class Game:
         self.map.entities.append(ItemEntity(150, 600, self.entityManager, self.items.items[5]))
         self.map.entities.append(ItemEntity(150, 700, self.entityManager, self.items.items[6]))
         self.map.entities.append(ItemEntity(150, 800, self.entityManager, self.items.items[7]))
+        self.map.entities.append(ItemEntity(200, 800, self.entityManager, self.items.items[7]))
         self.map.entities.append(ItemEntity(200, 350, self.entityManager, self.items.items[9]))
+        self.map.entities.append(ItemEntity(200, 400, self.entityManager, self.items.items[10]))
         self.map.entities.append(EntityHostileBase(150, 200, self.entityManager, 64, 64,
                                         textureAtlas("assets/templaet.png", 0, 0, 32, 32,
                                                      True, 2 * self.relativeSize / 10)))
@@ -177,6 +178,7 @@ class Game:
     def keyboardInput(self):
         keys = pygame.key.get_pressed()
         self.player.movementRotation = 0
+        self.player.walkingAnim.playing = False
         if keys[pygame.K_ESCAPE]: self.running = False
         if keys[pygame.K_f]: self.player.heal(1)
         if keys[pygame.K_g]: self.player.hurt(self.player, 100,  0, float(random.randint(-100,100))/100, float(random.randint(-100,100))/100)
@@ -370,6 +372,8 @@ class Map:
         self.roomLayer = 0
         self.roomsLeftTillNextLayer = 0
         self.objectManager = objectManager
+        self.gunUnstability = 0
+        self.durabilityUnstability = 0
         self.entityManager = entityManager
         self.items = None
 
@@ -384,15 +388,24 @@ class Map:
             "killCount": self.killCount,
             "seed": self.seed,
             "roomLayer": self.roomLayer,
-            "roomsLeft": self.roomsLeftTillNextLayer
+            "roomsLeft": self.roomsLeftTillNextLayer,
+            "gunUnstability": self.gunUnstability
         })
         today = datetime.datetime.now()
         with open(f"saves/save{today.year}.{today.month}.{today.day}.{today.hour}.{today.minute}.json","x", encoding="utf-8") as save:
             print(saveFile, file=save)
 
     def switchRoom(self):
+        self.objects = []
+        self.entities = []
+        self.floorTiles = []
+        self.rays = []
+        self.effects = []
+        self.roomLayer +=1
         self.seed = random.randint(-10000, 10000)
         rng = random.Random(self.seed)
+        self.gunUnstability = rng.randint(-1000, 1000)
+        self.durabilityUnstability = rng.randint(-1000, 1000)
 
         self.createFloor(0,0,32,32)
         wallsAmount = rng.randint(1, 7)
@@ -604,8 +617,8 @@ class Entity(GameObject):
                     self.armor = 0
                 self.hurtTime = cooldown
                 self.health -= newDamage
-                self.xd += xd
-                self.yd += yd
+                self.xd = xd
+                self.yd = yd
 
     def heal(self,amount):
         if self.health + amount > self.maxHealth:
@@ -645,6 +658,13 @@ class Entity(GameObject):
 class EntityHostileBase(Entity):
     def __init__(self, x, y, entityManager, size, size2, texture):
         super().__init__(x, y, entityManager, 30, 30, texture)
+        self.random = random.Random(self.objectManager.map.seed)
+        self.damageResistance = self.random.randint(1, 40)
+        self.ranged = False
+        self.cooldown = 1000
+        self.reloadCooldown = 3000
+        self.attackRange = 50
+        self.curTime = pygame.time.get_ticks()
 
     def update(self):
         super().update()
@@ -704,7 +724,7 @@ class Ray:
         self.x1 = x1
         self.y1 = y1
 
-    def rayCast(self, stepSize, relativeSize, map, entityClass, entityExcluded, screen):
+    def rayCast(self, stepSize, relativeSize, map, entityClass, entityExcluded):
         stepSize *= relativeSize
         angle = math.atan2(self.y1 - self.y0, self.x1 - self.x0)
         c1 = (self.x0 - self.x1) ** 2
@@ -718,19 +738,19 @@ class Ray:
             sy = self.y0 + sin[0] * i
             for object in map.objects:
                 if object.x < sx < object.x + object.hitbox[0] and object.y < sy < object.y + object.hitbox[1]:
-                    pygame.draw.circle(screen, (0, 255, 255), (sx, sy), 5)
-                    return object
-            for entity in map.entities:
-                if isinstance(entity, entityExcluded): continue
-                if (isinstance(entity, entityClass) and entity.x < sx < entity.x + entity.hitbox[0] and
-                        entity.y < sy < entity.y + entity.hitbox[1]):
-                    pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 5)
-                    return entity
+                    return object, cos[0], sin[0]
+            if entityClass == Player:
+                player = map.player
+                if player.x < sx < player.x + player.hitbox[0] and player.y < sy < player.y + player.hitbox[1]:
+                    return player, cos[0], sin[0]
+            else:
+                for entity in map.entities:
+                    if isinstance(entity, entityExcluded): continue
+                    if (isinstance(entity, entityClass) and entity.x < sx < entity.x + entity.hitbox[0] and
+                            entity.y < sy < entity.y + entity.hitbox[1]):
+                        return entity, cos[0], sin[0]
 
-            pygame.draw.circle(screen, (255, 0, 0), (sx, sy), 5)
-        return None
-
-
+        return None, None, None
 
 
 class ItemEntity(Entity):
@@ -738,42 +758,57 @@ class ItemEntity(Entity):
 
         super().__init__(x,y,entityManager,32, 32, itemClass.texture)
         self.canBeDamaged = False
-        self.item = itemClass
+        self.item = itemClass.clone()
 
 class Items:
     def __init__(self, map, objectManager):
-        self.items = [UsableItem(map, textureAtlas("assets/items.png", 16, 0, 16, 16,True,
+        self.items = [FirearmItem(map, textureAtlas("assets/items.png", 16, 0, 16, 16,True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 ".22 Broomhandle", 0, 1, 100),
-                      UsableItem(map, textureAtlas("assets/items.png", 32, 0, 16, 16, True,
+                                 ".22 Broomhandle", 0, 1, 100,15, (96,0,32,32), 250,
+                                  "assets/sounds/headshot", "assets/sounds/pistol1", None, 2, 2),
+                      FirearmItem(map, textureAtlas("assets/items.png", 32, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "Caldwell Handcannon", 1, 1, 50),
-                      UsableItem(map, textureAtlas("assets/items.png", 48, 0, 16, 16, True,
+                                 "Caldwell Handcannon", 1, 1, 50,15, (128,0,32,32), 300,
+                                  "assets/sounds/headshot", "assets/sounds/shotgun1", None, 2, 15, 12),
+                      FirearmItem(map, textureAtlas("assets/items.png", 48, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "Parabellum", 2, 1, 250),
-                      UsableItem(map, textureAtlas("assets/items.png", 64, 0, 16, 16, True,
+                                 "Parabellum", 2, 1, 250,25, (160,0,32,32), 200,
+                                  "assets/sounds/headshot", "assets/sounds/pistol2", None, 2, 1.5),
+                      FirearmItem(map, textureAtlas("assets/items.png", 64, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "Taurus 689", 3, 1, 150),
-                      UsableItem(map, textureAtlas("assets/items.png", 80, 0, 16, 16, True,
+                                 "Taurus 689", 3, 1, 150,35, (192,0,32,32), 500,
+                                  "assets/sounds/headshot", "assets/sounds/revolver2", None, 2, 1),
+                      FirearmItem(map, textureAtlas("assets/items.png", 80, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "HW 9 ST", 4, 1, 150),
-                      UsableItem(map, textureAtlas("assets/items.png", 96, 0, 16, 16, True,
+                                 "HW 9 ST", 4, 1, 150,70, (224,0,32,32), 700,
+                                  "assets/sounds/headshot", "assets/sounds/revolver1", None, 2, 0),
+                      FirearmItem(map, textureAtlas("assets/items.png", 96, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "vz. 61 Scorpion", 5, 1, 200),
-                      UsableItem(map, textureAtlas("assets/items.png", 112, 0, 16, 16, True,
+                                 "vz. 61 Scorpion", 5, 1, 200,10, (0,32,32,32), 70,
+                                  "assets/sounds/headshot", "assets/sounds/smg1", None, 2, 3),
+                      FirearmItem(map, textureAtlas("assets/items.png", 112, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "MP5k", 6, 1, 300),
-                      UsableItem(map, textureAtlas("assets/items.png", 128, 0, 16, 16, True,
+                                 "MP5k", 6, 1, 300,12, (32,32,32,32), 75,
+                                  "assets/sounds/headshot", "assets/sounds/smg3", None, 2, 1),
+                      FirearmItem(map, textureAtlas("assets/items.png", 128, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "CBJ-MS PDW", 7, 1, 250),
+                                 "CBJ-MS PDW", 7, 1, 250,35, (64,32,32,32), 50,
+                                  "assets/sounds/headshot", "assets/sounds/smg2", None, 2, 2),
                       UsableItem(map, textureAtlas("assets/items.png", 0, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "Med Kit", 8, 1, 1),
                       MeleeItem(map, textureAtlas("assets/items.png", 176, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
-                                 "Riot Shield", 9, 1, 50, 40, 2.5,
-                                [], 1000, "assets/sounds/bluntHeavy","assets/sounds/heavySwing",
-                                3, 1),
+                                 "Riot Shield", 9, 1, 50, 30, 2.5,
+                                (192,32,32,32), AnimationSequence([(192,32,32,32),(0, 64, 32, 32),(224, 32, 32, 32)], [600,100,300]), 1000,
+                                "assets/sounds/bluntHeavy","assets/sounds/heavyCharge",
+                                1, 1, 1),
+                      MeleeItem(map, textureAtlas("assets/items.png", 208, 0, 16, 16, True,
+                                                  2 * objectManager.relativeSize / 9.9),
+                                "Baseball Bat", 10, 1, 75, 20, 3.5,
+                                (96,32,32,32), AnimationSequence([(96, 32, 32, 32),(128,32,32,32),(160, 32, 32, 32)], [100,100,300]), 500,
+                                "assets/sounds/blunt","assets/sounds/heavySwing",
+                                3, 1, 0.5),
                       ]
 
 class Item:
@@ -784,33 +819,62 @@ class Item:
         self.itemId = itemId
         self.amount = amount
 
+    def clone(self):
+        return Item(self.map, self.texture, self.name, self.itemId, self.amount)
+
 class UsableItem(Item):
     def __init__(self, gameMap, texture, name, itemId, amount, durability):
         super().__init__(gameMap,texture,name,itemId,amount)
         self.durability = durability
 
     def onUse(self):
-        if self.durability - 1 <= 0:
+        if self.durability - math.fabs(1*self.map.durabilityUnstability/100) <= 0:
             self.amount -= 1
         else:
-            self.durability -= 1
+            self.durability -= math.fabs(1*self.map.durabilityUnstability/100)
+
+    def clone(self):
+        return UsableItem(
+            self.map, self.texture, self.name, self.itemId, self.amount, self.durability
+        )
 
 class MeleeItem(UsableItem):
-    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, attackRange, playerAnimSequence, cooldown, hitSound, swingSound, swingSoundRandom, hitSoundRandom):
+    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, attackRange, playerTexture, playerAnimSequence, cooldown, hitSound, swingSound, swingSoundRandom, hitSoundRandom, kbMod):
         super().__init__(gameMap, texture, name, itemId, amount, durability)
         self.attackDamage = attackDamage
         self.attackRange = attackRange
         self.playerAnimSequence = playerAnimSequence
         self.hitSound = hitSound
+        self.knockbackModifier = kbMod
+        self.playerTexture = playerTexture
         self.swingSound = swingSound
         self.swingSoundRandom = swingSoundRandom
         self.hitSoundRandom = hitSoundRandom
         self.cooldown = cooldown
         self.currentTime = pygame.time.get_ticks()
 
+    def tick(self):
+        print(self.durability)
+        player = self.map.player
+        if pygame.time.get_ticks() - self.currentTime < self.cooldown:
+            anim = self.playerAnimSequence.play()
+            player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1],anim[2], anim[3],
+                                                  True, 3 * player.objectManager.relativeSize / 10)
+        else:
+            player.originalTexture = textureAtlas("assets/player.png", self.playerTexture[0], self.playerTexture[1],
+                                                  self.playerTexture[2], self.playerTexture[3],
+                                                True, 3 * player.objectManager.relativeSize / 10)
+
+    def clone(self):
+        return MeleeItem(
+            self.map, self.texture, self.name, self.itemId, self.amount, self.durability,
+            self.attackDamage, self.attackRange, self.playerTexture, self.playerAnimSequence, self.cooldown,
+            self.hitSound, self.swingSound, self.swingSoundRandom, self.hitSoundRandom, self.knockbackModifier
+        )
+
     def onUse(self):
-        super().onUse()
         if pygame.time.get_ticks() - self.currentTime >= self.cooldown:
+            super().onUse()
             player = self.map.player
             self.currentTime = pygame.time.get_ticks()
             player.objectManager.settings.playSound(f"{self.swingSound}{random.randint(1, self.swingSoundRandom)}.ogg",
@@ -830,13 +894,72 @@ class MeleeItem(UsableItem):
                              player.x + playerSize + cos + range + playerSize / 2,
                              player.y + playerSize2 + sin + range + playerSize / 2)
                 entityPos = (entity.x, entity.y, entity.x + entity.hitbox[0], entity.y + entity.hitbox[0])
-                pygame.draw.rect(self.map.objectManager.screen, "#FFFFFF",
+                if self.map.objectManager.settings.showAABB:
+                    pygame.draw.rect(self.map.objectManager.screen, "#FFFFFF",
                                  (playerPos[0], playerPos[1], playerSize + range, playerSize2 + range), 2)
 
                 if AABB().overlapTuples(playerPos, entityPos):
                     entity.objectManager.settings.playSound(f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
                                                             80)
-                    entity.hurt(player, self.attackDamage, 0, cos, sin)
+                    entity.hurt(player, self.attackDamage, 0, cos*self.knockbackModifier, sin*self.knockbackModifier)
+
+class FirearmItem(UsableItem):
+    def __init__(self,gameMap, texture, name, itemId, amount, durability, attackDamage, playerTexture, cooldown, hitSound, swingSound, swingSoundRandom, hitSoundRandom, accuracy, numberShots=1):
+        super().__init__(gameMap, texture, name, itemId, amount, durability)
+        self.attackDamage = attackDamage
+        self.accuracy = accuracy
+        self.numberShots = numberShots
+        self.hitSound = hitSound
+        self.playerTexture = playerTexture
+        self.swingSound = swingSound
+        self.swingSoundRandom = swingSoundRandom
+        self.hitSoundRandom = hitSoundRandom
+        self.cooldown = cooldown
+        self.currentTime = pygame.time.get_ticks()
+
+    def tick(self):
+        print(self.durability)
+        player = self.map.player
+        player.originalTexture = textureAtlas("assets/player.png", self.playerTexture[0], self.playerTexture[1],
+                                                  self.playerTexture[2], self.playerTexture[3],
+                                                True, 3 * player.objectManager.relativeSize / 10)
+
+    def clone(self):
+        return FirearmItem(
+            self.map, self.texture, self.name, self.itemId, self.amount, self.durability,
+            self.attackDamage, self.playerTexture, self.cooldown, self.hitSound,
+            self.swingSound, self.swingSoundRandom, self.hitSoundRandom, self.accuracy, self.numberShots
+        )
+
+    def onUse(self):
+        if pygame.time.get_ticks() - self.currentTime >= self.cooldown:
+            super().onUse()
+            player = self.map.player
+            self.currentTime = pygame.time.get_ticks()
+            if self.swingSoundRandom == None:
+                player.objectManager.settings.playSound(
+                    f"{self.swingSound}.ogg",
+                    80)
+            else:
+                player.objectManager.settings.playSound(
+                    f"{self.swingSound}{random.randint(1, self.swingSoundRandom)}.ogg",
+                    80, random.randint(20000, 96000))
+            for _ in range(self.numberShots):
+                rnd = self.accuracy*self.map.objectManager.relativeSize*self.map.gunUnstability/500
+                r = (-rnd, rnd) if rnd > 0 else (rnd, -rnd)
+                pos = pygame.mouse.get_pos()
+                newPos = (pos[0]+random.randint(int(r[0]), int(r[1])), pos[1]+random.randint(int(r[0]), int(r[1])))
+
+                ray = Ray(player.x, player.y, newPos[0], newPos[1])
+                result = ray.rayCast(2, player.objectManager.relativeSize, self.map, Entity, ItemEntity)
+                pygame.draw.line(self.map.objectManager.screen, "#FFFF33",
+                                 (player.x + player.hitbox[0] / 2, player.y + player.hitbox[1] / 2),
+                                 (newPos[0], newPos[1]), int(0.25 * self.map.objectManager.relativeSize))
+                if isinstance(result[0], Entity):
+                    player.objectManager.settings.playSound(
+                        f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
+                        80)
+                    result[0].hurt(player, self.attackDamage, 0, result[1] / 1, result[2] / 1)
 
 
 class AnimationSequence:
@@ -845,18 +968,21 @@ class AnimationSequence:
         self.timeSequence = timeSequence
         self.currentTime = pygame.time.get_ticks()
         self.frame = 0
+        self.playing = False
 
     def play(self):
         time = self.timeSequence[self.frame] if isinstance(self.timeSequence, list) else self.timeSequence
+        self.playing = True
         if pygame.time.get_ticks() - self.currentTime >= time:
             self.currentTime = pygame.time.get_ticks()
             if self.frame + 1 >= len(self.sequence) :
                 self.frame = 0
             else:
                 self.frame += 1
-
+            self.playing = False
             return self.sequence[self.frame]
         return self.sequence[self.frame]
+
 
 class Player(Entity):
     def __init__(self, x, y, entityManager, size, texture):
@@ -871,10 +997,17 @@ class Player(Entity):
     def update(self):
         super().update()
         rotation = math.atan2(pygame.mouse.get_pos()[1] - self.y-self.hitbox[1]/2, pygame.mouse.get_pos()[0] - self.x-self.hitbox[0]/2)
-
+        if self.getSelectedItem() == None:
+            if not self.walkingAnim.playing:
+                self.originalTexture = textureAtlas("assets/player.png", 0, 0, 32, 32,
+                                                    True, 3 * self.objectManager.relativeSize / 10)
+        else:
+            item = self.getSelectedItem()
+            if isinstance(item, MeleeItem) or isinstance(item, FirearmItem):
+                item.tick()
         self.texture = rotateAtCenter(self.originalTexture, math.degrees(-rotation)-90+self.movementRotation, self.x, self.y)
         for item in self.inventory:
-            if item.durability <= 0:
+            if item.amount <= 0:
                 self.inventory.remove(item)
 
     def move(self, xa, ya):

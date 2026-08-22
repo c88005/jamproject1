@@ -1,9 +1,9 @@
 ------ IDEA STUFF
 
 random damage
-stats changing
---------------------rooms/maps chnaging dynamically
-bald
+---------------------stats changing
+---------------------rooms/maps chnaging dynamically
+---------------------bald
 hordes on a map
 random events
 armor stuff decaying ))))
@@ -15,8 +15,8 @@ conflicting stats
 final boss too hard
 resources being scarse and not at the same time
 ---------------------complex combat like in minecraft but EVEN WORSE
-bald
-NO AI SLOP
-GUNS
-MELEES
+---------------------bald
+---------------------NO AI SLOP
+---------------------GUNS
+---------------------MELEES
 ---------------------map seed changing every day
