@@ -62,7 +62,7 @@ class Game:
                 self.settings.w, self.settings.h = w, h
         else:
             self.settings.save()
-
+        self.guiTextures = GuiTextures(self.settings, self.relativeSize)
         pygame.mixer.init()
         pygame.mixer.set_num_channels(32)
         self.map.switchRoom()
@@ -79,12 +79,11 @@ class Game:
         for entity in self.map.entities:
             entity.update()
 
-    def ingameGui(self):
-        bg1 =pygame.Surface((30*self.relativeSize, 10*self.relativeSize))
-        bg1.set_alpha(100)
-        healthIcon = textureLoader("assets/health.png", 10*self.relativeSize, 10*self.relativeSize)
+    def ingameGui(self, tc):
+        bg1 = tc.bg1
+        healthIcon = tc.healthIcon
+
         self.screen.blit(bg1,(0,self.settings.h-10*self.relativeSize))
-        self.screen.blit(bg1, (70* self.relativeSize, self.settings.h - 10 * self.relativeSize))
         self.screen.blit(healthIcon,(0,self.settings.h-10*self.relativeSize))
         pygame.draw.rect(self.screen, "#ffffff",(10.5*self.relativeSize, self.settings.h-4*self.relativeSize,
                                                  self.relativeSize*7, self.relativeSize/3.5))
@@ -92,12 +91,20 @@ class Game:
                         int(5*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
         self.renderText(str(self.player.maxHealth), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
                         int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
-
+        if self.player.getSelectedItem() != None:
+            if isinstance(self.player.getSelectedItem(), UsableItem):
+                self.screen.blit(bg1, (80 * self.relativeSize, self.settings.h - 10 * self.relativeSize))
+                self.renderText("Durability: "+str(math.floor(self.player.getSelectedItem().durability)), 80 * self.relativeSize,
+                                self.settings.h - 10 * self.relativeSize,
+                                int(3 * self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
+                self.renderText("Amount: " + str(self.player.getSelectedItem().amount), 80 * self.relativeSize,
+                                self.settings.h - 5 * self.relativeSize,
+                                int(3 * self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
         for i in range(self.player.inventorySize):
             if self.player.selectedSlot == i:
-                slot = textureLoader("assets/inventorySlotSelected.png", self.relativeSize * 16, self.relativeSize * 8)
+                slot = tc.slotSelected
             else:
-                slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
+                slot = tc.slot
             self.screen.blit(slot, (17*self.relativeSize+i*17*self.relativeSize, 0))
             self.renderText("SLOT - " +str(i+1), 17*self.relativeSize+i*17*self.relativeSize + 4.5*self.relativeSize,
                             self.relativeSize * 0.85, int(self.relativeSize*1.6), bold=True)
@@ -107,22 +114,20 @@ class Game:
                                 17 * self.relativeSize + i * 17 * self.relativeSize + 0.25 * self.relativeSize,
                                 self.relativeSize * 5.5, int(self.relativeSize*1.6), bold=True)
         if self.player.maxHealth / 2 >= self.player.health > self.player.maxHealth/4:
-            bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
+            bgHurt = tc.bgHurt
             self.screen.blit(bgHurt, (0, 0))
         if self.player.health <= self.player.maxHealth/4 and not self.settings.showBloodOnScreen:
-            bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
+            bgHurt = tc.bgHurt
             self.screen.blit(bgHurt, (0, 0))
         if self.settings.showBloodOnScreen:
             if self.player.health <= self.player.maxHealth / 4:
                 if self.bloodOnScreen < 255:
                     self.bloodOnScreen += 1
-                bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png", self.settings.w,
-                                              self.settings.h).convert_alpha()
+                bgHurtRealBad = tc.bgHurtRealBad
                 self.screen.blit(bgHurtRealBad, (0, 0))
             if self.bloodOnScreen > 0 and self.player.health > self.player.maxHealth / 4:
                 self.bloodOnScreen -= 1
-                bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
-                                        self.settings.h).convert_alpha()
+                bgBlood = tc.bgBlood
                 bgBlood.set_alpha(self.bloodOnScreen)
                 self.screen.blit(bgBlood, (0, 0))
 
@@ -142,8 +147,8 @@ class Game:
         self.map.entities.append(ItemEntity(200, 350, self.entityManager, self.items.items[9]))
         self.map.entities.append(ItemEntity(200, 400, self.entityManager, self.items.items[10]))
         self.map.entities.append(EntityHostileBase(150, 200, self.entityManager, 64, 64,
-                                        textureAtlas("assets/templaet.png", 0, 0, 32, 32,
-                                                     True, 2 * self.relativeSize / 10)))
+                                        textureAtlas("assets/enemyBaseballbat.png", 0, 0, 32, 32,
+                                                     True, 3 * self.relativeSize / 10),"assets/enemyBaseballbat.png"))
         self.settings.playMusic("assets/sounds/music/Env1.ogg")
         while self.running:
             for event in pygame.event.get():
@@ -168,7 +173,7 @@ class Game:
 
             for object in self.map.objects:
                 object.draw()
-            self.ingameGui()
+            self.ingameGui(self.guiTextures)
 
             self.keyboardInput()
             self.mouseInput()
@@ -180,40 +185,39 @@ class Game:
         self.player.movementRotation = 0
         self.player.walkingAnim.playing = False
         if keys[pygame.K_ESCAPE]: self.running = False
-        if keys[pygame.K_f]: self.player.heal(1)
-        if keys[pygame.K_g]: self.player.hurt(self.player, 100,  0, float(random.randint(-100,100))/100, float(random.randint(-100,100))/100)
-        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
-            self.player.xd = -self.player.moveSpeed*self.relativeSize/10
-            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
-            if self.player.getSelectedItem() == None:
-                anim = self.player.walkingAnim.play()
-                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
-                                                    True, 3 * self.objectManager.relativeSize / 10)
-        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
-            self.player.xd = self.player.moveSpeed*self.relativeSize/10
-            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
-            if self.player.getSelectedItem() == None:
-                anim = self.player.walkingAnim.play()
-                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
-                                                    True, 3 * self.objectManager.relativeSize / 10)
-        if keys[pygame.K_UP] or keys[pygame.K_w]:
-            self.player.yd = -self.player.moveSpeed*self.relativeSize/10
-            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
-            if self.player.getSelectedItem() == None:
-                anim = self.player.walkingAnim.play()
-                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
-                                                    True, 3 * self.objectManager.relativeSize / 10)
-        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-            self.player.yd = self.player.moveSpeed*self.relativeSize/10
-            self.player.movementRotation = math.sin(pygame.time.get_ticks()/100)*math.pi*2
-            if self.player.getSelectedItem() == None:
-                anim = self.player.walkingAnim.play()
-                self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
-                                                    True, 3 * self.objectManager.relativeSize / 10)
-        if keys[pygame.K_1]: self.player.selectedSlot = 0
-        if keys[pygame.K_2]: self.player.selectedSlot = 1
-        if keys[pygame.K_3]: self.player.selectedSlot = 2
-        if keys[pygame.K_4]: self.player.selectedSlot = 3
+        if self.player.isDead == False:
+            if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+                self.player.xd = -self.player.moveSpeed * self.relativeSize / 10
+                self.player.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
+                if self.player.getSelectedItem() == None:
+                    anim = self.player.walkingAnim.play()
+                    self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                               True, 3 * self.objectManager.relativeSize / 10)
+            if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+                self.player.xd = self.player.moveSpeed * self.relativeSize / 10
+                self.player.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
+                if self.player.getSelectedItem() == None:
+                    anim = self.player.walkingAnim.play()
+                    self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                               True, 3 * self.objectManager.relativeSize / 10)
+            if keys[pygame.K_UP] or keys[pygame.K_w]:
+                self.player.yd = -self.player.moveSpeed * self.relativeSize / 10
+                self.player.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
+                if self.player.getSelectedItem() == None:
+                    anim = self.player.walkingAnim.play()
+                    self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                               True, 3 * self.objectManager.relativeSize / 10)
+            if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+                self.player.yd = self.player.moveSpeed * self.relativeSize / 10
+                self.player.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
+                if self.player.getSelectedItem() == None:
+                    anim = self.player.walkingAnim.play()
+                    self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
+                                                               True, 3 * self.objectManager.relativeSize / 10)
+            if keys[pygame.K_1]: self.player.selectedSlot = 0
+            if keys[pygame.K_2]: self.player.selectedSlot = 1
+            if keys[pygame.K_3]: self.player.selectedSlot = 2
+            if keys[pygame.K_4]: self.player.selectedSlot = 3
 
     def mouseInput(self):
         mouse = pygame.mouse
@@ -228,13 +232,6 @@ class Game:
             if self.player.getSelectedItem() is not None:
                 item = self.player.getSelectedItem()
                 item.onUse()
-            '''middleXPlayer = self.player.x + self.player.texture.get_rect()[2] - self.player.size * self.relativeSize / 10
-            middleYPlayer = self.player.y + self.player.hitbox[1]/2
-            ray = Ray(middleXPlayer, middleYPlayer, x, y).rayCast(1, self.relativeSize, self.map, Entity, ItemEntity, self.screen)
-            if ray and isinstance(ray, Entity):
-                pygame.draw.circle(self.screen, (255, 0, 0), (x, y), 10)
-                print(ray.health, ray.armor)
-                ray.hurt(self.player, 15, 0, self.player.xd, self.player.yd)'''
 
         for entity in self.map.entities:
             if isinstance(entity, ItemEntity):
@@ -617,8 +614,8 @@ class Entity(GameObject):
                     self.armor = 0
                 self.hurtTime = cooldown
                 self.health -= newDamage
-                self.xd = xd
-                self.yd = yd
+                self.xd += xd
+                self.yd += yd
 
     def heal(self,amount):
         if self.health + amount > self.maxHealth:
@@ -655,21 +652,57 @@ class Entity(GameObject):
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
                              (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 
+class GuiTextures:
+    def __init__(self, settings, relativeSize):
+        self.settings = settings
+        self.relativeSize = relativeSize
+        self.bg1 =pygame.Surface((20*self.relativeSize, 10*self.relativeSize))
+        self.healthIcon = textureLoader("assets/health.png", 10*self.relativeSize, 10*self.relativeSize)
+        self.bg1.set_alpha(100)
+        self.slotSelected = textureLoader("assets/inventorySlotSelected.png", self.relativeSize * 16, self.relativeSize * 8)
+        self.slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
+        self.bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
+        self.bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png", self.settings.w,
+                                  self.settings.h).convert_alpha()
+        self.bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
+                            self.settings.h).convert_alpha()
+
 class EntityHostileBase(Entity):
-    def __init__(self, x, y, entityManager, size, size2, texture):
+    def __init__(self, x, y, entityManager, size, size2, texture, texturePath):
         super().__init__(x, y, entityManager, 30, 30, texture)
         self.random = random.Random(self.objectManager.map.seed)
         self.damageResistance = self.random.randint(1, 40)
         self.ranged = False
-        self.cooldown = 1000
+        self.cooldown = 700
         self.reloadCooldown = 3000
-        self.attackRange = 50
-        self.curTime = pygame.time.get_ticks()
+        self.attackRange = 4.75
+        self.attackDamage = 25
+        self.swingSound = "assets/sounds/swing"
+        self.swingSoundRandom = 1
+        self.knockbackModifier = 0.025
+        self.hitSound = "assets/sounds/blade"
+        self.texturePath = texturePath
+        self.hitSoundRandom = 2
+        self.currentTime = pygame.time.get_ticks()
+        self.angle = 0
+        self.originalTexture = texture
+        self.movementRotation = 0
+        self.hitAnimation = AnimationSequence([(0, 0, 32, 32),(32,0,32,32),(64, 0, 32, 32)], [100,100,500])
+        self.deadTextureTuple = (96, 0, 32, 32)
+        self.deadTexture = textureAtlas(self.texturePath, self.deadTextureTuple[0], self.deadTextureTuple[1],
+                                                self.deadTextureTuple[2], self.deadTextureTuple[3],
+                                                True, 3.5 * self.objectManager.relativeSize / 10)
 
     def update(self):
         super().update()
         if not self.isDead:
             self.AI()
+        else:
+            self.originalTexture = textureAtlas(self.texturePath, self.deadTextureTuple[0], self.deadTextureTuple[1],
+                                                self.deadTextureTuple[2], self.deadTextureTuple[3],
+                                                True, 3.5 * self.objectManager.relativeSize / 10)
+            self.texture = rotateAtCenter(self.originalTexture, math.degrees(-self.angle) - 90 + self.movementRotation,
+                                          self.x, self.y)
 
     def AI(self):
         player = self.objectManager.map.player
@@ -677,7 +710,11 @@ class EntityHostileBase(Entity):
         entityCY = self.y + self.hitbox[1] / 2
         playerCX = player.x + player.hitbox[0] / 2
         playerCY = player.y + player.hitbox[1] / 2
-
+        self.angle = math.atan2(self.y - player.y - self.hitbox[1] / 2,
+                                self.x - player.x - self.hitbox[0] / 2)
+        self.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
+        self.texture = rotateAtCenter(self.originalTexture, math.degrees(-self.angle) + 90 + self.movementRotation,
+                                      self.x, self.y)
         stepSize = self.moveSpeed * self.objectManager.relativeSize / 10
 
         angle = math.atan2(playerCY - entityCY, playerCX - entityCX)
@@ -707,12 +744,53 @@ class EntityHostileBase(Entity):
                 desiredYD += (1.0 if playerCY > entityCY else -1.0) * (self.objectManager.relativeSize / 50)
 
         distance = math.sqrt((playerCX - entityCX) ** 2 + (playerCY - entityCY) ** 2)
+        if distance <= self.attackRange * self.objectManager.relativeSize:
+            self.attack()
         if distance > stepSize:
             self.xd = desiredXD
             self.yd = desiredYD
         else:
             self.xd = 0.0
             self.yd = 0.0
+
+        if pygame.time.get_ticks() - self.currentTime < self.cooldown:
+            anim = self.hitAnimation.play()
+            self.originalTexture = textureAtlas(self.texturePath, anim[0], anim[1], anim[2], anim[3],
+                                                  True, 3 * self.objectManager.relativeSize / 10)
+        else:
+            self.originalTexture = textureAtlas(self.texturePath, 0, 0,
+                                                  32, 32,
+                                                  True, 3 * self.objectManager.relativeSize / 10)
+
+    def attack(self):
+        if self.ranged:
+            pass
+        else:
+            if pygame.time.get_ticks() - self.currentTime >= self.cooldown:
+                player = self.objectManager.map.player
+                self.currentTime = pygame.time.get_ticks()
+                self.objectManager.settings.playSound(f"{self.swingSound}{random.randint(1, self.swingSoundRandom)}.ogg",
+                                                        80)
+                angle = math.atan2(player.y - self.y, player.x - self.x)
+                sin = math.sin(angle) * self.attackRange * self.objectManager.relativeSize
+                cos = math.cos(angle) * self.attackRange * self.objectManager.relativeSize
+
+                range = self.attackRange * self.objectManager.relativeSize
+                playerSize = self.size * self.objectManager.relativeSize / 10
+                playerSize2 = self.size2 * self.objectManager.relativeSize / 10
+
+                selfPos = (self.x + cos - range + playerSize / 2, self.y + sin - range + playerSize / 2,
+                             self.x + playerSize + cos + range + playerSize / 2,
+                             self.y + playerSize2 + sin + range + playerSize / 2)
+                playerPos = (player.x, player.y, player.x + player.hitbox[0], player.y + player.hitbox[0])
+                if self.objectManager.settings.showAABB:
+                    pygame.draw.rect(self.objectManager.screen, "#FFFFFF",
+                                     (playerPos[0], playerPos[1], playerSize + range, playerSize2 + range), 2)
+
+                if AABB().overlapTuples(selfPos, playerPos):
+                    self.objectManager.settings.playSound(f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
+                                                            80)
+                    player.hurt(self, self.attackDamage, 0, cos * self.knockbackModifier, sin * self.knockbackModifier)
 
 class Effect:
     def __init__(self):
@@ -854,7 +932,6 @@ class MeleeItem(UsableItem):
         self.currentTime = pygame.time.get_ticks()
 
     def tick(self):
-        print(self.durability)
         player = self.map.player
         if pygame.time.get_ticks() - self.currentTime < self.cooldown:
             anim = self.playerAnimSequence.play()
@@ -893,7 +970,7 @@ class MeleeItem(UsableItem):
                 playerPos = (player.x + cos - range + playerSize / 2, player.y + sin - range + playerSize / 2,
                              player.x + playerSize + cos + range + playerSize / 2,
                              player.y + playerSize2 + sin + range + playerSize / 2)
-                entityPos = (entity.x, entity.y, entity.x + entity.hitbox[0], entity.y + entity.hitbox[0])
+                entityPos = (entity.x, entity.y, entity.x + entity.hitbox[0], entity.y + entity.hitbox[1])
                 if self.map.objectManager.settings.showAABB:
                     pygame.draw.rect(self.map.objectManager.screen, "#FFFFFF",
                                  (playerPos[0], playerPos[1], playerSize + range, playerSize2 + range), 2)
@@ -918,7 +995,6 @@ class FirearmItem(UsableItem):
         self.currentTime = pygame.time.get_ticks()
 
     def tick(self):
-        print(self.durability)
         player = self.map.player
         player.originalTexture = textureAtlas("assets/player.png", self.playerTexture[0], self.playerTexture[1],
                                                   self.playerTexture[2], self.playerTexture[3],
@@ -992,11 +1068,19 @@ class Player(Entity):
         self.inventorySize = 4
         self.selectedSlot = 0
         self.movementRotation = 0
+        self.angle = 0
         self.walkingAnim = AnimationSequence([ (32, 0, 32, 32), (0, 0, 32, 32), (64, 0, 32, 32), (0, 0, 32, 32)], 125)
 
     def update(self):
         super().update()
-        rotation = math.atan2(pygame.mouse.get_pos()[1] - self.y-self.hitbox[1]/2, pygame.mouse.get_pos()[0] - self.x-self.hitbox[0]/2)
+        if self.isDead:
+            self.originalTexture = textureAtlas("assets/player.png", 64, 64, 32, 32,
+                                                True, 3.5 * self.objectManager.relativeSize / 10)
+            self.texture = rotateAtCenter(self.originalTexture, math.degrees(-self.angle) - 90 + self.movementRotation,
+                                          self.x, self.y)
+
+            return
+        self.angle = math.atan2(pygame.mouse.get_pos()[1] - self.y-self.hitbox[1]/2, pygame.mouse.get_pos()[0] - self.x-self.hitbox[0]/2)
         if self.getSelectedItem() == None:
             if not self.walkingAnim.playing:
                 self.originalTexture = textureAtlas("assets/player.png", 0, 0, 32, 32,
@@ -1005,10 +1089,13 @@ class Player(Entity):
             item = self.getSelectedItem()
             if isinstance(item, MeleeItem) or isinstance(item, FirearmItem):
                 item.tick()
-        self.texture = rotateAtCenter(self.originalTexture, math.degrees(-rotation)-90+self.movementRotation, self.x, self.y)
+        self.texture = rotateAtCenter(self.originalTexture, math.degrees(-self.angle) - 90 + self.movementRotation,
+                                      self.x, self.y)
         for item in self.inventory:
             if item.amount <= 0:
                 self.inventory.remove(item)
+
+
 
     def move(self, xa, ya):
 
