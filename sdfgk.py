@@ -39,7 +39,7 @@ class Game:
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
         self.entityManager = EntityManager(self.screen, self.relativeSize, self.settings, None)
-        self.player = Player(w/2, h/2, None, 63,
+        self.player = Player(w/2, h/4, None, 63,
                              textureAtlas("assets/player.png", 0,0,32,32,
                                                True, 3*self.relativeSize/10))
         self.menu = True
@@ -56,8 +56,10 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-
         self.version = "23.08.26 2:18AM"
+
+        self.pickup = False
+        self.dropping = False
 
         if path.isfile("settings.json"):
             self.settings.parse()
@@ -95,7 +97,7 @@ class Game:
             entity.update()
 
     def sendToGame(self):
-        self.map.switchRoom()
+        self.map.newGame()
 
     def menuDraw(self):
         if random.randint(0, 20) == 20:
@@ -185,7 +187,7 @@ class Game:
                                                  self.relativeSize*7, self.relativeSize/3.5))
         self.renderText(str(math.floor(self.player.health)), 10*self.relativeSize, self.settings.h-10*self.relativeSize,
                         int(5*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
-        self.renderText(str(self.player.maxHealth), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
+        self.renderText(str(self.player.armor), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
                         int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
         if self.player.getSelectedItem() != None:
             if isinstance(self.player.getSelectedItem(), UsableItem):
@@ -232,8 +234,6 @@ class Game:
     def update(self):
         print("version: " + self.version + " PRE RELEASE (REAL CLOSE)")
         self.settings.playMusic("assets/sounds/music/Menu.ogg")
-        self.player.addToInventory(self.items.items[11].clone())
-        self.map.messages.append(Message(500, 500, "HIBAUFBPAIUSFBKJABCFK", 10000, self.relativeSize))
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -256,9 +256,18 @@ class Game:
                 for object in self.map.objects:
                     object.draw()
                 for entity in self.map.entities:
+                    if entity.x + entity.size < 0 or entity.x > self.settings.w or entity.y + entity.size2 < 0 or entity.y > self.settings.h:
+                        self.map.entities.remove(entity)
                     entity.draw()
-
+                if self.map.checkSectorCleared():
+                    pygame.mixer.music.fadeout(3000)
+                    size = 32 * (2 * self.relativeSize / 10)
+                    centeringX = math.floor((self.settings.w - size * 14) / 2)
+                    self.screen.blit(self.guiTextures.exitIcon, (centeringX+(6.5*size), self.settings.h-size))
                 for message in self.map.messages:
+                    if pygame.time.get_ticks() - message.currentTime > message.time:
+                        self.map.messages.remove(message)
+
                     message.draw(self.screen)
                 self.ingameGui(self.guiTextures)
             else:
@@ -307,8 +316,12 @@ class Game:
             if keys[pygame.K_3]: self.player.selectedSlot = 2
             if keys[pygame.K_4]: self.player.selectedSlot = 3
             if keys[pygame.K_x]:
-                if self.player.getSelectedItem() != None:
-                    self.player.dropFromInventory(self.player.selectedSlot)
+                if not self.dropping:
+                    if self.player.getSelectedItem() != None:
+                        self.dropping = True
+                        self.player.dropFromInventory(self.player.selectedSlot)
+            else:
+                self.dropping = False
 
     def mouseInput(self):
         mouse = pygame.mouse
@@ -320,11 +333,32 @@ class Game:
 
         buttons = mouse.get_pressed()
         if self.menu == False:
-            if buttons[0]:
-                if self.player.getSelectedItem() is not None and not self.player.isDead:
-                    item = self.player.getSelectedItem()
-                    if isinstance(item, UsableItem):
-                        item.onUse()
+
+            for table in self.map.objects:
+                if isinstance(table, TableObject):
+                    if table.x < x < table.x + table.hitbox[0] and table.y < y < table.y + table.hitbox[1]:
+                        if table.usable:
+                            middlePlayer = (self.player.size * self.relativeSize / 10 / 2)
+                            middleEntity = (table.size * self.relativeSize / 10 / 2)
+                            c1 = (math.fabs(self.player.x + middlePlayer) - math.fabs(table.x + middleEntity)) ** 2
+                            c2 = (math.fabs(self.player.y + self.player.hitbox[1] / 2) - math.fabs(
+                                table.y + table.hitbox[1] / 2)) ** 2
+                            if math.fabs(math.sqrt(c1 + c2)) < self.relativeSize * 10:
+                                textTest = self.ghostText(table.name,
+                                                          int(3 * self.relativeSize), font="assets/zekton_rg.ttf",
+                                                          systemFont=False)
+                                pygame.draw.rect(self.screen, (0, 0, 0),
+                                                 (x + self.relativeSize * 2, y - self.relativeSize * 6,
+                                                  textTest.get_rect()[2], self.relativeSize * 4))
+                                self.renderExistingText(textTest, x + self.relativeSize * 2, y - self.relativeSize * 6)
+                                if buttons[0]:
+                                    self.pickup = True
+                                    table.action()
+                            else:
+                                showCrosshair = False
+                                cantGrab = textureLoader("assets/cantGrab.png", self.relativeSize * 5,
+                                                         self.relativeSize * 5)
+                                self.screen.blit(cantGrab, (x - self.relativeSize * 2.5, y - self.relativeSize * 2.5))
 
             for entity in self.map.entities:
                 if isinstance(entity, ItemEntity):
@@ -341,13 +375,34 @@ class Game:
                                                                       textTest.get_rect()[2], self.relativeSize*4))
                             self.renderExistingText(textTest,x+self.relativeSize*2, y-self.relativeSize*6)
                             if buttons[0]:
-                                if self.player.addToInventory(entity.item):
-                                    self.map.entities.remove(entity)
-                                    self.settings.playSound("assets/sounds/bp.ogg", 70)
+                                if not self.pickup:
+                                    if self.player.addToInventory(entity.item):
+                                        self.pickup = True
+                                        self.map.entities.remove(entity)
+                                        self.settings.playSound("assets/sounds/bp.ogg", 70)
                         else:
                             showCrosshair = False
                             cantGrab = textureLoader("assets/cantGrab.png", self.relativeSize*5,self.relativeSize*5)
                             self.screen.blit(cantGrab, (x-self.relativeSize*2.5, y-self.relativeSize*2.5))
+                        break
+
+            if buttons[0]:
+                if not self.player.useStopper:
+                    if not self.pickup:
+                        if self.player.getSelectedItem() is not None and not self.player.isDead:
+                            item = self.player.getSelectedItem()
+                            if isinstance(item, UsableItem):
+                                item.onUse()
+
+                        size = 32 * (2 * self.relativeSize / 10)
+                        centeringX = math.floor((self.settings.w - size * 14) / 2)
+                        if centeringX+(6.5 * size) < x < centeringX+(7.5 * size) and self.settings.h-size < y < self.settings.h:
+                            if self.map.checkSectorCleared():
+                                self.map.switchRoom()
+            else:
+                if self.player.useStopper:
+                    self.player.useStopper = False
+                self.pickup = False
         else:
             if buttons[0]:
                 for button in self.menuButtons:
@@ -527,6 +582,9 @@ class Map:
         self.entityManager = entityManager
         self.items = None
 
+    def checkSectorCleared(self):
+        return all(enemy.isDead for enemy in self.entities if isinstance(enemy, EntityHostileBase))
+
     def save(self):
         saveFile = json.dumps({
             "objects": self.objects,
@@ -558,8 +616,28 @@ class Map:
         rng = random.Random(self.seed)
         self.gunUnstability = rng.randint(-1000, 1000)
         self.durabilityUnstability = rng.randint(-1000, 1000)
+        self.createFloor(0,0,32,32)
+        self.createBounds(160, 0, 32, 32)
+        #self.player.addToInventory(self.items.items[12].clone())
+        self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 2.5,
+                                     "after you kill all of the enemies on the map the exit will open", 2147483647 ,
+                                     self.objectManager.relativeSize))
+        self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 3,
+                                     "The recoil and durability of items and guns is 'Unstable' here", 2147483647 ,
+                                     self.objectManager.relativeSize))
+
+        self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
+                                     "Hit crates or lockers to retrieve some loot from them", 2147483647,
+                                     self.objectManager.relativeSize))
+
+        self.messages.append(Message(self.objectManager.settings.w / 2 + self.objectManager.relativeSize*10, self.objectManager.settings.h / 1.25,
+                                     "this knife is the first weapon btw", 2147483647,
+                                     self.objectManager.relativeSize))
+
+        self.entities.append(ItemEntity(self.objectManager.settings.w / 2, self.objectManager.relativeSize*40, self.objectManager, self.items.items[13].clone()))
 
     def switchRoom(self):
+        self.objectManager.settings.playMusic(f"assets/sounds/music/Env{random.randint(1,3)}.ogg")
         self.objects = []
         self.entities = []
         self.floorTiles = []
@@ -572,20 +650,31 @@ class Map:
         self.durabilityUnstability = rng.randint(-1000, 1000)
 
         self.createFloor(0,0,32,32)
+        self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 2,
+                             f"Firearm Spread : {self.gunUnstability/500}, Item Breaking : {math.fabs(1*self.durabilityUnstability/100)}",
+                                     2500, self.objectManager.relativeSize))
         wallsAmount = rng.randint(1, 7)
         enemiesAmount = int(rng.randint(1, 4) * (self.roomLayer/2+1))
         lockersAmount = int(rng.randint(1, 2) * (self.roomLayer/2+1))
+        tableRandom = rng.randint(0, 2)
         for _ in range(wallsAmount):
             self.createWall(rng, 128, 0, 32, 32)
         for _ in range(enemiesAmount):
             if self.roomLayer == 0:
-                if self.roomsLeftTillNextLayer <= 3:
+                if self.roomsLeftTillNextLayer <= 5:
                     renemy = rng.randint(1, 3)
                     if renemy == 1: self.spawnKnifeEnemy(rng)
                     if renemy == 2: self.spawnBaseballBatEnemy(rng)
                     if renemy == 3: self.spawnTomahawkEnemy(rng)
+                    if 3 <= self.roomsLeftTillNextLayer <= 5 :
+                        renemy2 = rng.randint(1, 2)
+                        if renemy2 == 1: self.spawnCBJEnemy(rng)
+                        if renemy2 == 2: self.spawnBroomhandleEnemy(rng)
+
         for _ in range(lockersAmount):
             self.spawnLockerWithRandom(rng)
+        if tableRandom == 0:
+            self.spawnTable(rng)
         self.createBounds(160, 0, 32, 32)
 
     def spawnLockerWithRandom(self, rng):
@@ -601,19 +690,29 @@ class Map:
             locker.addItem(self.items.items[rng.randint(0, len(self.items.items) - 1)].clone())
         self.entities.append(locker)
 
-    def spawnTable(self, x, y):
-        self.objects.append(
-            TableObject(x, y,self.objectManager,textureAtlas("assets/terrain.png", 192, 0, 64, 32,
-                                     True, 2 * self.objectManager.relativeSize / 9.9)
-                        ))
+    def spawnTable(self, rng):
+        table = rng.randint(1, 2)
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size * 14) / 2)
+        centeringY = math.floor((self.objectManager.settings.h - size * 9) / 2)
+        if table == 1:
+            self.objects.append(
+                ModdingTable(centeringX + rng.randint(1, 10) * size, centeringY + rng.randint(0, 7) * size, self.objectManager, textureAtlas("assets/terrain.png", 192, 32, 64, 32,
+                                                                   True, 2 * self.objectManager.relativeSize / 9.9)
+                            ))
+        else:
+            self.objects.append(
+                RepairingTable(centeringX + rng.randint(1, 10) * size, centeringY + rng.randint(0, 7) * size,
+                             self.objectManager, textureAtlas("assets/terrain.png", 128, 32, 64, 32,
+                                                              True, 2 * self.objectManager.relativeSize / 9.9)
+                             ))
     def createWall(self, rng, x0,y0,x1,y1):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
         centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
-        expansion = rng.randint(1, 5)
+        expansion = rng.randint(1, 3)
         for i in range(expansion):
-            replacement = rng.randint(1, 5)
-            position = rng.randint(1, 10)
+            position = rng.randint(1, 5)
             self.objects.append(
                 GameObject(centeringX + position * size + i*size, centeringY + rng.randint(0, 7) * size,
                            self.objectManager, 64,
@@ -651,6 +750,7 @@ class Map:
         self.entities.append(EnemyCBJ(centeringX + size + rng.randint(1, 12) * size,
                                                centeringY + size + rng.randint(1, 7) * size, self.objectManager,
                                            self.objectManager.relativeSize))
+
 
     def spawnBroomhandleEnemy(self, rng):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
@@ -782,6 +882,76 @@ class TableObject(GameObject):
         super().__init__(x, y, objectManager, 64, texture, False)
         self.size = 128
         self.size2 = 64
+        self.usable = False
+        self.name = "Table"
+
+    def action(self):
+        pass
+
+class ModdingTable(TableObject):
+    def __init__(self, x, y, objectManager, texture):
+        super().__init__(x, y, objectManager, texture)
+        self.usable = True
+        self.name = "Modding Table"
+
+    def action(self):
+        player = self.objectManager.map.player
+        item = player.getSelectedItem()
+        if item != None:
+            if isinstance(item, MeleeItem):
+                d = random.randint(-35, 100)
+                a = random.randint(-15, 20)
+                c = random.randint(-250, 100)
+                s = random.randint(-25, 200)
+                item.durability += d
+                item.attackDamage += a
+                item.cooldown += c
+                item.stunning += s
+                self.usable = False
+                self.objectManager.settings.playSound("assets/sounds/bolt.ogg", 70)
+                self.objectManager.map.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
+                                     f"Melee Modded! :{d} DUR, {a}DMG, {c}CD, {s}STN", 5000,
+                                     self.objectManager.relativeSize))
+            elif isinstance(item, FirearmItem):
+                d = random.randint(-35, 100)
+                a = random.randint(-15, 20)
+                c = random.randint(-250, 100)
+                s = random.randint(-25, 15)/10
+                item.durability += d
+                item.attackDamage += a
+                item.cooldown += c
+                item.accuracy += s
+                self.usable = False
+                self.objectManager.settings.playSound("assets/sounds/bolt.ogg", 70)
+                self.objectManager.map.messages.append(
+                    Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
+                            f"Gun Modded! :{d} DUR, {a}DMG, {c}CD, {s}STN", 5000,
+                            self.objectManager.relativeSize))
+            else:
+                self.objectManager.map.messages.append(
+                    Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
+                            f"Item cant be modded!", 2000,
+                            self.objectManager.relativeSize))
+
+class RepairingTable(TableObject):
+    def __init__(self, x, y, objectManager, texture):
+        super().__init__(x, y, objectManager, texture)
+        self.usable = True
+        self.name = "Repairment Table"
+
+    def action(self):
+        player = self.objectManager.map.player
+        item = player.getSelectedItem()
+        if item != None:
+            if isinstance(item, UsableItem):
+                d = random.randint(-35, 500)
+                item.durability += d
+                self.usable = False
+                self.objectManager.settings.playSound("assets/sounds/bolt.ogg", 70)
+                self.objectManager.map.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
+                                     f"Item Repaired! :{d} DUR", 5000,
+                                     self.objectManager.relativeSize))
+
 
 class Entity(GameObject):
     def __init__(self, x, y, entityManager, size, size2, texture):
@@ -813,7 +983,8 @@ class Entity(GameObject):
                 return
             newDamage = (damage * ((100-self.damageResistance) / 100) + ((math.fabs(attacker.xd) + math.fabs(attacker.yd)) / 2) / 10)
 
-            if self.armor > 0:  newDamage *= (self.armor * 0.1) / 100
+            if self.armor > 0:
+                newDamage *= (100-self.damageResistance) / 100
             if newDamage > self.health:
                 for _ in range(random.randint(1,2)):
                     self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
@@ -889,6 +1060,7 @@ class GuiTextures:
         self.bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
         self.bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png", self.settings.w,
                                   self.settings.h).convert_alpha()
+        self.exitIcon = textureAtlas("assets/terrain.png", 256, 32, 32, 32, True, 2*self.relativeSize/10)
         self.bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
                             self.settings.h).convert_alpha()
 
@@ -930,7 +1102,7 @@ class ItemContainerObject(Entity):
 
 class EntityHostileBase(Entity):
     def __init__(self, x, y, entityManager, texture, texturePath, deadTexture=(96,0,32,32)):
-        super().__init__(x, y, entityManager, 30, 30, texture)
+        super().__init__(x, y, entityManager, 40, 40, texture)
         self.hasAnim = True
         self.random = random.Random()
         self.damageResistance = self.random.randint(1, 40)
@@ -1125,8 +1297,8 @@ class EnemyCBJ(EntityHostileBase):
         self.reloadCooldown = 3000
         self.attackRange = 25
         self.moveSpeed = 0.5
-        self.accuracy = 10
-        self.attackDamage = 15
+        self.accuracy = 7
+        self.attackDamage = 5
         self.swingSound = "assets/sounds/smg2"
         self.swingSoundRandom = None
         self.hitSound = "assets/sounds/headshot"
@@ -1146,7 +1318,7 @@ class EnemyBroomhandle(EntityHostileBase):
         self.attackRange = 25
         self.moveSpeed = 0.5
         self.accuracy = 5
-        self.attackDamage = 12
+        self.attackDamage = 8
         self.swingSound = "assets/sounds/pistol1"
         self.swingSoundRandom = None
         self.hitSound = "assets/sounds/headshot"
@@ -1299,6 +1471,39 @@ class Items:
                                                   [100, 100, 300]), 500,
                                 "assets/sounds/blade", "assets/sounds/swing",
                                 1, 2, 0.25, 50),
+                      MeleeItem(map, textureAtlas("assets/items.png", 224, 0, 16, 16, True,
+                                                  2 * objectManager.relativeSize / 9.9),
+                                "Sledgehammer", 12, 1, 500, 70, 5,
+                                (96, 96, 32, 32),
+                                AnimationSequence([(96, 96, 32, 32),(128,96,32,32),(160, 96, 32, 32)],
+                                                  [300, 500, 700]), 1500,
+                                "assets/sounds/blunt", "assets/sounds/heavySwing",
+                                3, 1, 1, 1500),
+                      MeleeItem(map, textureAtlas("assets/items.png", 240, 0, 16, 16, True,
+                                                  2 * objectManager.relativeSize / 9.9),
+                                "Knife", 13, 1, 200, 15, 2.5,
+                                (0, 96, 32, 32),
+                                AnimationSequence([(0, 96, 32, 32), (32, 96, 32, 32), (64, 96, 32, 32)],
+                                                  [100, 100, 200]), 400,
+                                "assets/sounds/blade", "assets/sounds/swing",
+                                1, 2, 0.15, 50),
+                      MeleeItem(map, textureAtlas("assets/items.png", 32, 16, 16, 16, True,
+                                                  2 * objectManager.relativeSize / 9.9),
+                                "Machette", 14, 1, 200, 40, 3,
+                                (32, 128, 32, 32),
+                                AnimationSequence([(32, 128, 32, 32), (64, 128, 32, 32), (96, 128, 32, 32)],
+                                                  [200, 100, 300]), 600,
+                                "assets/sounds/blade", "assets/sounds/swing",
+                                1, 2, 0.15, 100),
+                      MeleeItem(map, textureAtlas("assets/items.png", 0, 0, 16, 16, True,
+                                                  2 * objectManager.relativeSize / 9.9),
+                                "Medkit?????", 16, 1, 200, 15, 2,
+                                (96, 64, 32, 32),
+                                AnimationSequence([(96, 64, 32, 32)],
+                                                  400), 400,
+                                "assets/sounds/blunt", "assets/sounds/swing",
+                                1, 1, 0.15, 50),
+
                       ]
 
 class Item:
@@ -1343,13 +1548,13 @@ class Message:
 
     def createSurface(self):
         pygame.font.init()
-        my_font = pygame.font.Font("assets/zekton_rg.ttf", int(self.relativeSize*2.5))
+        my_font = pygame.font.Font("assets/zekton_rg.ttf", int(self.relativeSize*2))
         text_surface = my_font.render(self.string, False, "#FFFFFF")
         return text_surface
 
     def draw(self,screen):
-        pygame.draw.rect(screen, "#000000", (self.x, self.y, self.surface.get_rect()[2], self.surface.get_rect()[3]))
-        screen.blit(self.surface, (self.x + self.surface.get_rect()[2]/2, self.y + self.surface.get_rect()[3]/2))
+        pygame.draw.rect(screen, "#000000", (self.x - self.surface.get_rect()[2]/2, self.y - self.surface.get_rect()[3]/2, self.surface.get_rect()[2], self.surface.get_rect()[3]))
+        screen.blit(self.surface, (self.x - self.surface.get_rect()[2]/2, self.y - self.surface.get_rect()[3]/2))
 
 class HealingItem(UsableItem):
     def __init__(self, gameMap, texture, name, itemId, amount, durability, healAmount, cooldown, playerTexture):
@@ -1372,6 +1577,7 @@ class HealingItem(UsableItem):
             player = self.map.player
             player.objectManager.settings.playSound("assets/sounds/stim.ogg", 80)
             player.heal(self.healAmount)
+            player.armor += self.healAmount/2
 
     def clone(self):
         return HealingItem(self.map, self.texture, self.name, self.itemId, self.amount, self.durability, self.healAmount, self.cooldown, self.playerTexture)
@@ -1531,7 +1737,9 @@ class Player(Entity):
         self.selectedSlot = 0
         self.movementRotation = 0
         self.angle = 0
+        self.moveSpeed += 0.5
         self.walkingAnim = AnimationSequence([ (32, 0, 32, 32), (0, 0, 32, 32), (64, 0, 32, 32), (0, 0, 32, 32)], 125)
+        self.useStopper = False
 
     def update(self):
         super().update()
@@ -1556,8 +1764,7 @@ class Player(Entity):
         for item in self.inventory:
             if item.amount <= 0:
                 self.inventory.remove(item)
-
-
+                self.useStopper = True
 
     def move(self, xa, ya):
 
