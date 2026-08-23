@@ -1,1 +1,1 @@
-{"showAABB": false, "showFps": true, "showBlood": true, "showBloodOnScreen": true, "width": 1920, "height": 1080, "sound": true, "soundVolume": 100, "music": false, "musicVolume": 100}
+{"showAABB": true, "showFps": true, "showBlood": true, "showBloodOnScreen": true, "width": 800, "height": 450, "sound": true, "soundVolume": 100, "music": false, "musicVolume": 100}
