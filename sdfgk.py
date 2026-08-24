@@ -56,7 +56,8 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-        self.version = "23.08.26 2:18AM"
+        self.version = "24.08.26 4:12AM"
+        self.deathTime = pygame.time.get_ticks()
 
         self.pickup = False
         self.dropping = False
@@ -92,6 +93,7 @@ class Game:
 
     def gameTick(self):
         if self.paused: return
+        #if self.player.isDead: return
         self.player.update()
         for entity in self.map.entities:
             entity.update()
@@ -187,7 +189,7 @@ class Game:
                                                  self.relativeSize*7, self.relativeSize/3.5))
         self.renderText(str(math.floor(self.player.health)), 10*self.relativeSize, self.settings.h-10*self.relativeSize,
                         int(5*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
-        self.renderText(str(self.player.armor), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
+        self.renderText(str(math.floor(self.player.armor)), 11*self.relativeSize, self.settings.h-3.5*self.relativeSize,
                         int(3*self.relativeSize), font="assets/zekton_rg.ttf", systemFont=False)
         if self.player.getSelectedItem() != None:
             if isinstance(self.player.getSelectedItem(), UsableItem):
@@ -270,6 +272,9 @@ class Game:
 
                     message.draw(self.screen)
                 self.ingameGui(self.guiTextures)
+                if self.player.isDead:
+                    pygame.mixer.music.fadeout(1000)
+                    self.renderText("Press Space To Go To Menu", 0, self.relativeSize*20, int(self.relativeSize*7), "assets/zekton_rg.ttf", "#FFFFFF", False, False)
             else:
                 self.menuDraw()
             self.keyboardInput()
@@ -282,6 +287,8 @@ class Game:
         self.player.movementRotation = 0
         self.player.walkingAnim.playing = False
         if keys[pygame.K_ESCAPE]: self.running = False
+        if self.menu == False and self.player.isDead:
+            if keys[pygame.K_SPACE]: self.menu = True
         if self.player.isDead == False and self.menu == False:
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 self.player.xd = -self.player.moveSpeed * self.relativeSize / 10
@@ -311,6 +318,7 @@ class Game:
                     anim = self.player.walkingAnim.play()
                     self.player.originalTexture = textureAtlas("assets/player.png", anim[0], anim[1], anim[2], anim[3],
                                                                True, 3 * self.objectManager.relativeSize / 10)
+
             if keys[pygame.K_1]: self.player.selectedSlot = 0
             if keys[pygame.K_2]: self.player.selectedSlot = 1
             if keys[pygame.K_3]: self.player.selectedSlot = 2
@@ -322,6 +330,8 @@ class Game:
                         self.player.dropFromInventory(self.player.selectedSlot)
             else:
                 self.dropping = False
+            if keys[pygame.K_q]:
+                self.player.pushLikeMelee()
 
     def mouseInput(self):
         mouse = pygame.mouse
@@ -604,9 +614,12 @@ class Map:
 
     def newGame(self):
         self.player.inventory.clear()
+        self.player.isDead = False
         self.player.health = 100
         self.player.armor = 0
         self.player.damageResistance = 0
+        self.roomLayer = 0
+        self.roomsLeftTillNextLayer = 0
         self.objects = []
         self.entities = []
         self.floorTiles = []
@@ -618,64 +631,101 @@ class Map:
         self.durabilityUnstability = rng.randint(-1000, 1000)
         self.createFloor(0,0,32,32)
         self.createBounds(160, 0, 32, 32)
-        #self.player.addToInventory(self.items.items[12].clone())
+        self.player.addToInventory(self.items.items[13].clone())
         self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 2.5,
                                      "after you kill all of the enemies on the map the exit will open", 2147483647 ,
                                      self.objectManager.relativeSize))
         self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 3,
                                      "The recoil and durability of items and guns is 'Unstable' here", 2147483647 ,
                                      self.objectManager.relativeSize))
+        self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 2,
+                                     "X:drop item, Q:push(attack with fists), scrolling nad numbers:inventory", 2147483647,
+                                     self.objectManager.relativeSize))
 
         self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 1.5,
                                      "Hit crates or lockers to retrieve some loot from them", 2147483647,
                                      self.objectManager.relativeSize))
 
-        self.messages.append(Message(self.objectManager.settings.w / 2 + self.objectManager.relativeSize*10, self.objectManager.settings.h / 1.25,
-                                     "this knife is the first weapon btw", 2147483647,
-                                     self.objectManager.relativeSize))
-
-        self.entities.append(ItemEntity(self.objectManager.settings.w / 2, self.objectManager.relativeSize*40, self.objectManager, self.items.items[13].clone()))
+        #self.entities.append(ItemEntity(self.objectManager.settings.w / 2, self.objectManager.relativeSize*40, self.objectManager, self.items.items[13].clone()))
 
     def switchRoom(self):
-        self.objectManager.settings.playMusic(f"assets/sounds/music/Env{random.randint(1,3)}.ogg")
         self.objects = []
         self.entities = []
         self.floorTiles = []
         self.messages = []
         self.effects = []
+        if self.roomsLeftTillNextLayer + 1 % 6 == 0:
+            self.roomLayer += 1
         self.roomsLeftTillNextLayer +=1
         self.seed = random.randint(-10000, 10000)
         rng = random.Random(self.seed)
         self.gunUnstability = rng.randint(-1000, 1000)
         self.durabilityUnstability = rng.randint(-1000, 1000)
 
-        self.createFloor(0,0,32,32)
+        if self.roomLayer == 0 or self.roomLayer == 2:
+            self.createFloor(0,0,32,32)
+        else:
+            self.createFloor(160, 0, 32, 32)
         self.messages.append(Message(self.objectManager.settings.w / 2, self.objectManager.settings.h / 2,
                              f"Firearm Spread : {self.gunUnstability/500}, Item Breaking : {math.fabs(1*self.durabilityUnstability/100)}",
                                      2500, self.objectManager.relativeSize))
         wallsAmount = rng.randint(1, 7)
-        enemiesAmount = int(rng.randint(1, 4) * (self.roomLayer/2+1))
+        enemiesAmount = int(rng.randint(1, 4))
         lockersAmount = int(rng.randint(1, 2) * (self.roomLayer/2+1))
         tableRandom = rng.randint(0, 2)
-        for _ in range(wallsAmount):
-            self.createWall(rng, 128, 0, 32, 32)
-        for _ in range(enemiesAmount):
-            if self.roomLayer == 0:
-                if self.roomsLeftTillNextLayer <= 5:
-                    renemy = rng.randint(1, 3)
-                    if renemy == 1: self.spawnKnifeEnemy(rng)
-                    if renemy == 2: self.spawnBaseballBatEnemy(rng)
-                    if renemy == 3: self.spawnTomahawkEnemy(rng)
-                    if 3 <= self.roomsLeftTillNextLayer <= 5 :
-                        renemy2 = rng.randint(1, 2)
-                        if renemy2 == 1: self.spawnCBJEnemy(rng)
-                        if renemy2 == 2: self.spawnBroomhandleEnemy(rng)
 
-        for _ in range(lockersAmount):
-            self.spawnLockerWithRandom(rng)
+        if self.roomsLeftTillNextLayer != 15:
+            self.objectManager.settings.playMusic(f"assets/sounds/music/Env{random.randint(1,3)}.ogg")
+            for _ in range(wallsAmount):
+                if self.roomLayer == 0:
+                    self.createWall(rng, 128, 0, 32, 32)
+                elif self.roomLayer == 1:
+                    self.createWall(rng, 128, 0, 32, 32)
+                elif self.roomLayer == 2:
+                    self.createWall(rng, 416, 0, 32, 32)
+            for _ in range(enemiesAmount):
+                if self.roomLayer == 0:
+                    if self.roomsLeftTillNextLayer <= 5:
+                        renemy = rng.randint(1, 3)
+                        if renemy == 1: self.spawnKnifeEnemy(rng)
+                        if renemy == 2: self.spawnBaseballBatEnemy(rng)
+                        if renemy == 3: self.spawnTomahawkEnemy(rng)
+                        if 3 <= self.roomsLeftTillNextLayer <= 5 :
+                            renemy2 = rng.randint(1, 2)
+                            if renemy2 == 1: self.spawnCBJEnemy(rng)
+                            if renemy2 == 2: self.spawnBroomhandleEnemy(rng)
+                elif self.roomLayer == 1 and self.roomLayer == 2:
+                    if self.roomsLeftTillNextLayer <= 5:
+                        renemy = rng.randint(1, 3)
+                        if renemy == 1: self.spawnMachetteEnemy(rng)
+                        if renemy == 2: self.spawnRiotShieldEnemy(rng)
+                        if renemy == 3: self.spawnRevolverEnemy(rng)
+                        if 3 <= self.roomsLeftTillNextLayer <= 5 :
+                            renemy2 = rng.randint(1, 2)
+                            if renemy2 == 1: self.spawnRevolverEnemy(rng)
+                            if renemy2 == 2: self.spawnMp5Enemy(rng)
+            for _ in range(lockersAmount):
+                if self.roomLayer == 0:
+                    self.spawnLockerWithRandom(rng)
+                if self.roomLayer == 1:
+                    self.spawnBoxWithRandom(rng)
+        else:
+            self.spawnBoss(rng)
+            self.objectManager.settings.playMusic(f"assets/sounds/music/Boss1.ogg")
+            self.spawnTable(rng)
+            self.spawnTable(rng)
+            for _ in range(lockersAmount):
+                self.spawnLockerWithRandom(rng)
+                self.spawnBoxWithRandom(rng)
+
         if tableRandom == 0:
             self.spawnTable(rng)
-        self.createBounds(160, 0, 32, 32)
+        if self.roomLayer == 0:
+            self.createBounds(160,0,32,32)
+        elif self.roomLayer == 1:
+            self.createBounds(128, 0, 32, 32)
+        elif self.roomLayer == 2:
+            self.createBounds(416, 0, 32, 32)
 
     def spawnLockerWithRandom(self, rng):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
@@ -688,6 +738,22 @@ class Map:
                                                   True, 2 * self.objectManager.relativeSize / 9.9), 1)
         for _ in range(rng.randint(1, 3)):
             locker.addItem(self.items.items[rng.randint(0, len(self.items.items) - 1)].clone())
+        self.entities.append(locker)
+
+    def spawnBoxWithRandom(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        position = rng.randint(1, 10)
+        position2 = rng.randint(1, 7)
+        locker = ItemContainerObject(centeringX+position*size, centeringY+position2*size, self.objectManager, 64,
+                                     textureAtlas("assets/terrain.png", 256, 0, 32, 32,
+                                                  True, 2 * self.objectManager.relativeSize / 9.9), 1)
+        for _ in range(rng.randint(1, 3)):
+            item = rng.randint(0, len(self.items.items) - 1)
+            if item == 16:
+                item = 8
+            locker.addItem(self.items.items[item].clone())
         self.entities.append(locker)
 
     def spawnTable(self, rng):
@@ -727,6 +793,15 @@ class Map:
         self.entities.append(EnemyBaseballBat(centeringX + size + rng.randint(1, 12) * size,
                                               centeringY + size + rng.randint(1, 7) * size, self.objectManager,
                                               self.objectManager.relativeSize))
+
+    def spawnBoss(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size * 14) / 2)
+        centeringY = math.floor((self.objectManager.settings.h - size * 9) / 2)
+        self.entities.append(EnemyBoss(centeringX + size + rng.randint(1, 12) * size,
+                                              centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+                                              self.objectManager.relativeSize))
+
     def spawnKnifeEnemy(self, rng):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
         centeringX = math.floor((self.objectManager.settings.w - size * 14) / 2)
@@ -757,6 +832,38 @@ class Map:
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
         centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
         self.entities.append(EnemyBroomhandle(centeringX + size + rng.randint(1, 12) * size,
+                                               centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+                                           self.objectManager.relativeSize))
+
+    def spawnRevolverEnemy(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        self.entities.append(EnemyRevolver(centeringX + size + rng.randint(1, 12) * size,
+                                               centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+                                           self.objectManager.relativeSize))
+
+    def spawnMachetteEnemy(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        self.entities.append(EnemyMachette(centeringX + size + rng.randint(1, 12) * size,
+                                               centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+                                           self.objectManager.relativeSize))
+
+    def spawnRiotShieldEnemy(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        self.entities.append(EnemyRiotShield(centeringX + size + rng.randint(1, 12) * size,
+                                               centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+                                           self.objectManager.relativeSize))
+
+    def spawnMp5Enemy(self, rng):
+        size = 32 * (2 * self.objectManager.relativeSize / 10)
+        centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
+        centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
+        self.entities.append(EnemyMp5(centeringX + size + rng.randint(1, 12) * size,
                                                centeringY + size + rng.randint(1, 7) * size, self.objectManager,
                                            self.objectManager.relativeSize))
 
@@ -1360,6 +1467,149 @@ class EnemyBaseballBat(EntityHostileBase):
         self.hitAnimation = AnimationSequence([(0, 0, 32, 32), (32, 0, 32, 32), (64, 0, 32, 32)], [100, 100, 500])
         self.deadTextureTuple = (96, 0, 32, 32)
 
+class EnemyMachette(EntityHostileBase):
+    def __init__(self, x, y, entityManager, relativeSize):
+        super().__init__(x, y, entityManager, textureAtlas("assets/enemyMachette.png", 0, 0, 32, 32,
+                                       True, 3 * relativeSize / 10), "assets/enemyMachette.png")
+        self.ranged = False
+        self.cooldown = 700
+        self.reloadCooldown = 3000
+        self.health = 150
+        self.maxHealth = 150
+        self.attackRange = 4.75
+        self.attackDamage = 30
+        self.swingSound = "assets/sounds/heavySwing"
+        self.swingSoundRandom = 3
+        self.knockbackModifier = 0.05
+        self.hitSound = "assets/sounds/blade"
+        self.hitSoundRandom = 1
+        self.hitAnimation = AnimationSequence([(0, 0, 32, 32), (32, 0, 32, 32), (64, 0, 32, 32)], [100, 100, 500])
+        self.deadTextureTuple = (96, 0, 32, 32)
+
+class EnemyRevolver(EntityHostileBase):
+    def __init__(self, x, y, entityManager,relativeSize):
+        self.deadTextureTuple = (32, 0, 32, 32)
+        super().__init__(x, y, entityManager, textureAtlas("assets/enemyRevolver.png", 0, 0, 32, 32,
+                                       True, 3 * relativeSize / 10), "assets/enemyRevolver.png", (32,0,32,32))
+        self.damageResistance = self.random.randint(1, 40)
+        self.ranged = True
+        self.hasAnim = False
+        self.cooldown = 1000
+        self.health = 150
+        self.maxHealth = 150
+        self.reloadCooldown = 3000
+        self.attackRange = 30
+        self.moveSpeed = 0.5
+        self.accuracy = 2.5
+        self.attackDamage = 20
+        self.swingSound = "assets/sounds/revolver1"
+        self.swingSoundRandom = None
+        self.hitSound = "assets/sounds/headshot"
+        self.hitSoundRandom = 2
+        self.stunRemoval = 5
+
+class EnemyMp5(EntityHostileBase):
+    def __init__(self, x, y, entityManager,relativeSize):
+        self.deadTextureTuple = (32, 0, 32, 32)
+        super().__init__(x, y, entityManager, textureAtlas("assets/enemyMp5.png", 0, 0, 32, 32,
+                                       True, 3 * relativeSize / 10), "assets/enemyMp5.png", (32,0,32,32))
+        self.damageResistance = self.random.randint(1, 40)
+        self.ranged = True
+        self.hasAnim = False
+        self.cooldown = 60
+        self.health = 100
+        self.maxHealth = 100
+        self.reloadCooldown = 3000
+        self.attackRange = 30
+        self.moveSpeed = 0.35
+        self.accuracy = 15
+        self.attackDamage = 5
+        self.swingSound = "assets/sounds/smg3"
+        self.swingSoundRandom = None
+        self.hitSound = "assets/sounds/headshot"
+        self.hitSoundRandom = 2
+        self.stunRemoval = 5
+
+class EnemyRiotShield(EntityHostileBase):
+    def __init__(self, x, y, entityManager, relativeSize):
+        super().__init__(x, y, entityManager, textureAtlas("assets/enemyRiotShield.png", 0, 0, 32, 32,
+                                       True, 3 * relativeSize / 10), "assets/enemyRiotShield.png")
+        self.ranged = False
+        self.cooldown = 2000
+        self.reloadCooldown = 3000
+        self.attackRange = 4.75
+        self.attackDamage = 50
+        self.health = 200
+        self.maxHealth = 200
+        self.swingSound = "assets/sounds/heavySwing"
+        self.swingSoundRandom = 3
+        self.knockbackModifier = 0.5
+        self.hitSound = "assets/sounds/blunt"
+        self.hitSoundRandom = 1
+        self.hitAnimation = AnimationSequence([(0, 0, 32, 32), (32, 0, 32, 32), (64, 0, 32, 32)], [100, 100, 500])
+        self.deadTextureTuple = (96, 0, 32, 32)
+
+class EnemyBoss(EntityHostileBase):
+    def __init__(self, x, y, entityManager, relativeSize):
+        super().__init__(x, y, entityManager, textureAtlas("assets/enemyBoss.png", 0, 0, 32, 32,
+                                       True, 3 * relativeSize / 10), "assets/enemyBoss.png")
+        self.ranged = False
+        self.cooldown = 450
+        self.reloadCooldown = 3000
+        self.attackRange = 5
+        self.attackDamage = 35
+        self.health = 5000
+        self.moveSpeed += 0.1
+        self.damageResistance = 25
+        self.maxHealth = 5000
+        self.swingSound = "assets/sounds/heavyCharge"
+        self.swingSoundRandom = 1
+        self.knockbackModifier = 0.25
+        self.stunRemoval = 1500
+        self.hitSound = "assets/sounds/blunt"
+        self.hitSoundRandom = 1
+        self.hitAnimation = AnimationSequence([(0, 0, 32, 32), (32, 0, 32, 32), (64, 0, 32, 32)], [150, 150, 150])
+        self.deadTextureTuple = (96, 0, 32, 32)
+
+    def update(self):
+        super().update()
+        self.stunTime /= 2
+
+    def hurt(self,attacker,damage,cooldown,xd,yd):
+        if self.canBeDamaged:
+            if self.hurtTime > 0:
+                self.hurtTime -= 1
+                return
+            newDamage = (damage * ((100-self.damageResistance) / 100) + ((math.fabs(attacker.xd) + math.fabs(attacker.yd)) / 2) / 10)
+
+            if self.armor > 0:
+                newDamage *= (100-self.damageResistance) / 100
+            if newDamage > self.health:
+                for _ in range(random.randint(1,2)):
+                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                                                                              random.randint(0,3)*16, 0,
+                                                                              16,16, True, 3*self.objectManager.relativeSize/10),
+                                                                 self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
+                                                                 self.y + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10))
+                self.health = 0
+                self.isDead = True
+                self.xd += xd * 2
+                self.yd += yd * 2
+            else:
+                if self.armor > 0:
+                    self.armor -= newDamage / 2
+                elif self.armor < 0:
+                    self.armor = 0
+                for _ in range(random.randint(0,1)):
+                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                                                                              random.randint(0,3)*16, 0,
+                                                                              16,16, True, 3*self.objectManager.relativeSize/10),
+                                                                 self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
+                                                                 self.y + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10))
+                self.hurtTime = cooldown
+                self.health -= newDamage
+
+
 class Effect:
     def __init__(self, screen, texture, x, y):
         self.screen = screen
@@ -1503,6 +1753,9 @@ class Items:
                                                   400), 400,
                                 "assets/sounds/blunt", "assets/sounds/swing",
                                 1, 1, 0.15, 50),
+                      HealingItem(map, textureAtlas("assets/items.png", 80, 16, 16, 16, True,
+                                                    2 * objectManager.relativeSize / 9.9),
+                                  "Stim", 17, 1, 5, 40, 1500, (128, 128, 32, 32)),
 
                       ]
 
@@ -1740,6 +1993,7 @@ class Player(Entity):
         self.moveSpeed += 0.5
         self.walkingAnim = AnimationSequence([ (32, 0, 32, 32), (0, 0, 32, 32), (64, 0, 32, 32), (0, 0, 32, 32)], 125)
         self.useStopper = False
+        self.currentTime = pygame.time.get_ticks()
 
     def update(self):
         super().update()
@@ -1795,6 +2049,35 @@ class Player(Entity):
         self.inventory.remove(item)
         return item
 
+    def pushLikeMelee(self):
+        if pygame.time.get_ticks() - self.currentTime >= 1500:
+            self.currentTime = pygame.time.get_ticks()
+            self.objectManager.settings.playSound(f"assets/sounds/draw5.ogg",
+                                                    80)
+            for entity in self.objectManager.map.entities:
+                if isinstance(entity, ItemEntity): continue
+                pos = pygame.mouse.get_pos()
+                angle = math.atan2(pos[1] - self.y, pos[0] - self.x)
+                sin = math.sin(angle) * 2 * self.objectManager.relativeSize
+                cos = math.cos(angle) * 2 * self.objectManager.relativeSize
+
+                range = 2 * self.objectManager.relativeSize
+                playerSize = self.size * self.objectManager.relativeSize / 10
+                playerSize2 = self.size2 * self.objectManager.relativeSize / 10
+
+                playerPos = (self.x + cos - range + playerSize / 2, self.y + sin - range + playerSize / 2,
+                             self.x + playerSize + cos + range + playerSize / 2,
+                             self.y + playerSize2 + sin + range + playerSize / 2)
+                entityPos = (entity.x, entity.y, entity.x + entity.hitbox[0], entity.y + entity.hitbox[1])
+                if self.objectManager.settings.showAABB:
+                    pygame.draw.rect(self.objectManager.screen, "#FFFFFF",
+                                 (playerPos[0], playerPos[1], playerSize + range, playerSize2 + range), 2)
+
+                if AABB().overlapTuples(playerPos, entityPos):
+                    entity.objectManager.settings.playSound(f"assets/sounds/blunt1.ogg",
+                                                            80)
+                    entity.hurt(self, 5, 0, cos*0.05, sin*0.05)
+                    entity.stunTime += 150
 
 
 #Game(800,450)
