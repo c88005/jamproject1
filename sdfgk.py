@@ -56,7 +56,7 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-        self.version = "24.08.26 4:12AM"
+        self.version = "24.08.26 4:35AM"
         self.deathTime = pygame.time.get_ticks()
 
         self.pickup = False
@@ -408,7 +408,10 @@ class Game:
                         centeringX = math.floor((self.settings.w - size * 14) / 2)
                         if centeringX+(6.5 * size) < x < centeringX+(7.5 * size) and self.settings.h-size < y < self.settings.h:
                             if self.map.checkSectorCleared():
-                                self.map.switchRoom()
+                                if self.map.roomsLeftTillNextLayer == 15:
+                                    self.menu = True
+                                else:
+                                    self.map.switchRoom()
             else:
                 if self.player.useStopper:
                     self.player.useStopper = False
@@ -654,9 +657,9 @@ class Map:
         self.floorTiles = []
         self.messages = []
         self.effects = []
-        if self.roomsLeftTillNextLayer + 1 % 6 == 0:
-            self.roomLayer += 1
         self.roomsLeftTillNextLayer +=1
+        if self.roomsLeftTillNextLayer % 6 == 0:
+            self.roomLayer += 1
         self.seed = random.randint(-10000, 10000)
         rng = random.Random(self.seed)
         self.gunUnstability = rng.randint(-1000, 1000)
@@ -694,13 +697,23 @@ class Map:
                             renemy2 = rng.randint(1, 2)
                             if renemy2 == 1: self.spawnCBJEnemy(rng)
                             if renemy2 == 2: self.spawnBroomhandleEnemy(rng)
-                elif self.roomLayer == 1 and self.roomLayer == 2:
-                    if self.roomsLeftTillNextLayer <= 5:
+                elif self.roomLayer == 1:
+                    if self.roomsLeftTillNextLayer <= 10:
                         renemy = rng.randint(1, 3)
                         if renemy == 1: self.spawnMachetteEnemy(rng)
                         if renemy == 2: self.spawnRiotShieldEnemy(rng)
                         if renemy == 3: self.spawnRevolverEnemy(rng)
-                        if 3 <= self.roomsLeftTillNextLayer <= 5 :
+                        if 8 <= self.roomsLeftTillNextLayer <= 10 :
+                            renemy2 = rng.randint(1, 2)
+                            if renemy2 == 1: self.spawnRevolverEnemy(rng)
+                            if renemy2 == 2: self.spawnMp5Enemy(rng)
+                elif self.roomLayer == 1:
+                    if self.roomsLeftTillNextLayer <= 14:
+                        renemy = rng.randint(1, 3)
+                        if renemy == 1: self.spawnMachetteEnemy(rng)
+                        if renemy == 2: self.spawnRiotShieldEnemy(rng)
+                        if renemy == 3: self.spawnRevolverEnemy(rng)
+                        if 13 <= self.roomsLeftTillNextLayer <= 14 :
                             renemy2 = rng.randint(1, 2)
                             if renemy2 == 1: self.spawnRevolverEnemy(rng)
                             if renemy2 == 2: self.spawnMp5Enemy(rng)
@@ -798,8 +811,8 @@ class Map:
         size = 32 * (2 * self.objectManager.relativeSize / 10)
         centeringX = math.floor((self.objectManager.settings.w - size * 14) / 2)
         centeringY = math.floor((self.objectManager.settings.h - size * 9) / 2)
-        self.entities.append(EnemyBoss(centeringX + size + rng.randint(1, 12) * size,
-                                              centeringY + size + rng.randint(1, 7) * size, self.objectManager,
+        self.entities.append(EnemyBoss(centeringX + size + 6.5 * size,
+                                              centeringY + size + 3.5 * size, self.objectManager,
                                               self.objectManager.relativeSize))
 
     def spawnKnifeEnemy(self, rng):
@@ -1558,10 +1571,10 @@ class EnemyBoss(EntityHostileBase):
         self.reloadCooldown = 3000
         self.attackRange = 5
         self.attackDamage = 35
-        self.health = 5000
+        self.health = 2500
         self.moveSpeed += 0.1
         self.damageResistance = 25
-        self.maxHealth = 5000
+        self.maxHealth = 2500
         self.swingSound = "assets/sounds/heavyCharge"
         self.swingSoundRandom = 1
         self.knockbackModifier = 0.25
