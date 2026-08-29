@@ -42,7 +42,7 @@ class Game:
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
         self.entityManager = EntityManager(self.screen, self.relativeSize, self.settings, None)
-        self.player = Player(self.settings.w/2, self.settings.h/4, None, 63,
+        self.player = Player(self.settings.w/2, self.settings.h/2, None, 63,
                              textureAtlas("assets/player.png", 0,0,32,32,
                                                True, 3*self.relativeSize/10))
         self.menu = True
@@ -59,7 +59,7 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-        self.version = "30.08.26 2:30AM PATCH1"
+        self.version = "30.08.26 2:35AM PATCH1.1"
         self.deathTime = pygame.time.get_ticks()
 
         self.pickup = False
