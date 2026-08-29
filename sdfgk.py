@@ -31,15 +31,18 @@ class Game:
     def __init__(self, w, h, fps=60):
         self.settings = Settings(w, h, fps)
         self.fpsCap = fps
-
+        if path.isfile("settings.json"):
+            self.settings.parse()
+        else:
+            self.settings.save()
         self.clock = pygame.time.Clock()
         self.running = True
-        self.screen = pygame.display.set_mode((w, h))
+        self.screen = pygame.display.set_mode((self.settings.w, self.settings.h))
         self.relativeSize = self.settings.w / 100
         self.map = Map(None, None, None)
         self.objectManager = ObjectManager(self.screen, self.relativeSize, self.settings, None)
         self.entityManager = EntityManager(self.screen, self.relativeSize, self.settings, None)
-        self.player = Player(w/2, h/4, None, 63,
+        self.player = Player(self.settings.w/2, self.settings.h/4, None, 63,
                              textureAtlas("assets/player.png", 0,0,32,32,
                                                True, 3*self.relativeSize/10))
         self.menu = True
@@ -56,18 +59,12 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-        self.version = "24.08.26 4:35AM"
+        self.version = "30.08.26 2:30AM PATCH1"
         self.deathTime = pygame.time.get_ticks()
 
         self.pickup = False
         self.dropping = False
 
-        if path.isfile("settings.json"):
-            self.settings.parse()
-            if w is not None and h is not None:
-                self.settings.w, self.settings.h = w, h
-        else:
-            self.settings.save()
         self.snowflakesMenu = []
         self.guiTextures = GuiTextures(self.settings, self.relativeSize)
         self.menuButtons = [[0, self.settings.w/2 - self.relativeSize*12, self.relativeSize*25, self.relativeSize*24, self.relativeSize*8, False],
@@ -87,9 +84,8 @@ class Game:
 
         self.update()
 
-    def updateScreenSize(self, nw=0, nh=0):
-        self.screen = pygame.display.set_mode((nw, nh)) if nw==0 and nh==0 else\
-            pygame.display.set_mode((self.settings.w, self.settings.h))
+    def updateScreenSize(self):
+        self.screen = pygame.display.set_mode((self.settings.w, self.settings.h))
 
     def gameTick(self):
         if self.paused: return
@@ -896,17 +892,17 @@ class Map:
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
         centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
         for j in range(14):
-            self.objects.append(GameObject(centeringX+(j * size), -size*0.5, self.objectManager, 64,
+            self.objects.append(GameObject(centeringX+(j * size), -size*0.5 + centeringY, self.objectManager, 64,
                                               textureAtlas("assets/terrain.png", x0, y0, x1, y1,
                                                            True, 2 * self.objectManager.relativeSize / 10)))
-            self.objects.append(GameObject(centeringX + (j * size), self.objectManager.settings.h - size * 0.5, self.objectManager, 64,
+            self.objects.append(GameObject(centeringX + (j * size), self.objectManager.settings.h - size * 0.5 - centeringY, self.objectManager, 64,
                                            textureAtlas("assets/terrain.png", x0, y0, x1, y1,
                                                         True, 2 * self.objectManager.relativeSize / 10)))
         for i in range(9):
-            self.objects.append(GameObject(0, size*i, self.objectManager, 64,
+            self.objects.append(GameObject(0, size*i + centeringY, self.objectManager, 64,
                                               textureAtlas("assets/terrain.png", x0, y0, x1, y1,
                                                            True, 2 * self.objectManager.relativeSize / 10)))
-            self.objects.append(GameObject(self.objectManager.settings.w - size, size * i, self.objectManager, 64,
+            self.objects.append(GameObject(self.objectManager.settings.w - size, size * i + centeringY, self.objectManager, 64,
                                            textureAtlas("assets/terrain.png", x0, y0, x1, y1,
                                                         True, 2 * self.objectManager.relativeSize / 10)))
 
