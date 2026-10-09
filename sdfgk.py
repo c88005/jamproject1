@@ -11,7 +11,7 @@ def textureAtlas(texture, x0, y0, x1, y1, resize=False, size=1):
     if resize:
         newnew = newTexture.subsurface((x0, y0, x1, y1))
         rect = newnew.get_rect()
-        a = pygame.transform.scale(newnew, (rect[2]*size, rect[3]*size))
+        a = pygame.transform.scale(newnew, (rect[2]*size, rect[3]*size)).convert_alpha()
         return a
 
     else:
@@ -25,7 +25,7 @@ def rotateAtCenter(image, angle, x, y):
 
 def textureLoader(texture, sizeX=1, sizeY=1):
     newTexture = pygame.image.load(texture)
-    return pygame.transform.scale(newTexture, [sizeX, sizeY])
+    return pygame.transform.scale(newTexture, [sizeX, sizeY]).convert_alpha()
 
 class Game:
     def __init__(self, w, h, fps=60):
@@ -78,7 +78,8 @@ class Game:
             [4, self.relativeSize * 8, self.relativeSize * 17, self.relativeSize * 2, self.relativeSize * 2, False],
             [5, self.relativeSize * 8, self.relativeSize * 20, self.relativeSize * 2, self.relativeSize * 2, False],
             [6, self.relativeSize * 1, self.relativeSize * 23, self.relativeSize * 16, self.relativeSize * 2, False],
-            [7, self.relativeSize * 1, self.relativeSize * 26, self.relativeSize * 16, self.relativeSize * 2, False]]
+            [7, self.relativeSize * 1, self.relativeSize * 26, self.relativeSize * 16, self.relativeSize * 2, False],
+            [8, self.relativeSize * 10, self.relativeSize * 29, self.relativeSize * 2, self.relativeSize * 2, False]]
         pygame.mixer.init()
         pygame.mixer.set_num_channels(32)
 
@@ -174,6 +175,14 @@ class Game:
                             self.relativeSize * 26, int(2 * self.relativeSize), font="assets/zekton_rg.ttf",
                             systemFont=False,
                             )
+            self.renderText("Shadows", self.relativeSize,
+                            self.relativeSize * 29, int(2 * self.relativeSize), font="assets/zekton_rg.ttf",
+                            systemFont=False,
+                            )
+            pygame.draw.rect(self.screen, "#FFFFFF",
+                             (self.relativeSize * 10, self.relativeSize * 29,
+                              self.relativeSize * 2, self.relativeSize * 2),
+                             0 if self.settings.shadows else 2)
 
     def ingameGui(self, tc):
         bg1 = tc.bg1
@@ -230,10 +239,22 @@ class Game:
         if self.settings.showFps:
             self.renderText(str(math.floor(self.clock.get_fps())), 1, 1)
     def update(self):
+
+        size = math.floor(32 * (2 * self.relativeSize / 10))
+        centeringX = math.floor((self.settings.w - size * 14) / 2)
+        centeringY = math.floor((self.settings.h - size * 9) / 2)
+        for i in range(10):
+
+            self.snowflakesMenu.append([random.randint(0, self.settings.w), random.randint(0, self.settings.h), 5])
         print("version: " + self.version + " PRE RELEASE (REAL CLOSE)")
         self.settings.playMusic("assets/sounds/music/Menu.ogg")
         while self.running:
             for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    key = pygame.key.get_pressed()
+                    if event.key == pygame.K_ESCAPE:
+                        if self.menu == False:
+                            self.paused = not self.paused
                 if event.type == pygame.QUIT:
                     self.running = False
                 if event.type == pygame.MOUSEWHEEL and self.menu == False:
@@ -251,6 +272,11 @@ class Game:
                         effect.draw()
 
                 self.player.draw()
+                if self.settings.shadows:
+                    for object in self.map.objects:
+                        object.drawShadow()
+                    self.objectManager.screen.blit(self.guiTextures.shadow, (centeringX + size/9.9,
+                                                            centeringY + size/2))
                 for object in self.map.objects:
                     object.draw()
                 for entity in self.map.entities:
@@ -259,8 +285,7 @@ class Game:
                     entity.draw()
                 if self.map.checkSectorCleared():
                     pygame.mixer.music.fadeout(3000)
-                    size = 32 * (2 * self.relativeSize / 10)
-                    centeringX = math.floor((self.settings.w - size * 14) / 2)
+
                     self.screen.blit(self.guiTextures.exitIcon, (centeringX+(6.5*size), self.settings.h-size))
                 for message in self.map.messages:
                     if pygame.time.get_ticks() - message.currentTime > message.time:
@@ -268,6 +293,9 @@ class Game:
 
                     message.draw(self.screen)
                 self.ingameGui(self.guiTextures)
+                if self.paused:
+                    self.renderText("Game Paused", 0, 0, int(self.relativeSize * 3),
+                                    "assets/zekton_rg.ttf", "#000000", False, False)
                 if self.player.isDead:
                     pygame.mixer.music.fadeout(1000)
                     self.renderText("Press Space To Go To Menu", 0, self.relativeSize*20, int(self.relativeSize*7), "assets/zekton_rg.ttf", "#FFFFFF", False, False)
@@ -282,10 +310,10 @@ class Game:
         keys = pygame.key.get_pressed()
         self.player.movementRotation = 0
         self.player.walkingAnim.playing = False
-        if keys[pygame.K_ESCAPE]: self.running = False
+        #if keys[pygame.K_ESCAPE]: self.running = False
         if self.menu == False and self.player.isDead:
             if keys[pygame.K_SPACE]: self.menu = True
-        if self.player.isDead == False and self.menu == False:
+        if self.player.isDead == False and self.menu == False and not self.paused:
             if keys[pygame.K_LEFT] or keys[pygame.K_a]:
                 self.player.xd = -self.player.moveSpeed * self.relativeSize / 10
                 self.player.movementRotation = math.sin(pygame.time.get_ticks() / 100) * math.pi * 2
@@ -339,7 +367,7 @@ class Game:
 
         buttons = mouse.get_pressed()
         if self.menu == False:
-
+            if self.paused: return
             for table in self.map.objects:
                 if isinstance(table, TableObject):
                     if table.x < x < table.x + table.hitbox[0] and table.y < y < table.y + table.hitbox[1]:
@@ -461,6 +489,9 @@ class Game:
                                     self.settings.musicVolume = 0
                                 else:
                                     self.settings.musicVolume += 10
+                        if sbutton[0] == 8:
+                            if sbutton[5] == False:
+                                self.settings.shadows = not self.settings.shadows
 
                         if sbutton[5] == False:
                             sbutton[5] = True
@@ -508,6 +539,7 @@ class Settings:
         self.showBlood = True
         self.showBloodOnScreen = True
         self.showAABB = False
+        self.shadows = False
 
     def playSound(self, sound, volume):
         if self.sound:
@@ -532,7 +564,8 @@ class Settings:
             "sound":self.sound,
             "soundVolume":self.soundVolume,
             "music":self.music,
-            "musicVolume":self.musicVolume
+            "musicVolume":self.musicVolume,
+            "shadows":self.shadows
         })
         with open(f"settings.json","w+", encoding="utf-8") as save:
             print(settingsFile, file=save)
@@ -550,6 +583,7 @@ class Settings:
                 self.soundVolume = settingsFile["soundVolume"]
                 self.music = settingsFile["music"]
                 self.musicVolume = settingsFile["musicVolume"]
+                self.shadows = settingsFile["shadows"]
             except BaseException as e:
                 print(e)
             read.close()
@@ -882,30 +916,42 @@ class Map:
         centeringY = math.floor((self.objectManager.settings.h - size * 9) / 2)
         for i in range(9):
             for j in range(14):
-                self.floorTiles.append(
-                    GameObject(centeringX + (j * size), centeringY + i * size, self.objectManager, 0,
+                g = GameObject(centeringX + (j * size), centeringY + i * size, self.objectManager, 0,
                                textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                            True, 2 * self.objectManager.relativeSize / 10)))
+                                            True, 2 * self.objectManager.relativeSize / 10))
+                g.showShadow = False
+                self.floorTiles.append(g)
 
     def createBounds(self, x0, y0, x1, y1):
         size = math.floor(32 * (2 * self.objectManager.relativeSize / 10))
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
         centeringY = math.floor((self.objectManager.settings.h - size*9)/2)
-        for j in range(14):
-            self.objects.append(GameObject(centeringX+(j * size), -size*0.5 + centeringY, self.objectManager, 64,
-                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                                           True, 2 * self.objectManager.relativeSize / 10)))
-            self.objects.append(GameObject(centeringX + (j * size), self.objectManager.settings.h - size * 0.5 - centeringY, self.objectManager, 64,
-                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                                        True, 2 * self.objectManager.relativeSize / 10)))
-        for i in range(9):
-            self.objects.append(GameObject(0, size*i + centeringY, self.objectManager, 64,
-                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                                           True, 2 * self.objectManager.relativeSize / 10)))
-            self.objects.append(GameObject(self.objectManager.settings.w - size, size * i + centeringY, self.objectManager, 64,
-                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
-                                                        True, 2 * self.objectManager.relativeSize / 10)))
 
+
+
+        for j in range(14):
+            g1 = GameObject(centeringX+(j * size), -size*0.5 + centeringY, self.objectManager, 64,
+                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                           True, 2 * self.objectManager.relativeSize / 10))
+            g2 = GameObject(centeringX + (j * size), self.objectManager.settings.h - size * 0.5 - centeringY, self.objectManager, 64,
+                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                        True, 2 * self.objectManager.relativeSize / 10))
+
+            g1.showShadow = False
+            g2.showShadow = False
+            self.objects.append(g1)
+            self.objects.append(g2)
+        for i in range(9):
+            g1 = GameObject(0, size*i + centeringY, self.objectManager, 64,
+                                              textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                           True, 2 * self.objectManager.relativeSize / 10))
+            g2 = GameObject(self.objectManager.settings.w - size, size * i + centeringY, self.objectManager, 64,
+                                           textureAtlas("assets/terrain.png", x0, y0, x1, y1,
+                                                        True, 2 * self.objectManager.relativeSize / 10))
+            g1.showShadow = False
+            g2.showShadow = False
+            self.objects.append(g1)
+            self.objects.append(g2)
 class AABB:
     def __init__(self):
         pass
@@ -968,8 +1014,10 @@ class GameObject:
         self.y = y
         self.size = size
         self.size2 = size
+        self.showShadow = True
         self.objectManager = objectManager
         self.texture = texture
+        self.shadow = None
         self.hitbox = (size,size)
         self.indestructible = indestructible
         self.hardness = 0
@@ -985,6 +1033,15 @@ class GameObject:
             self.explosionResistance = explosionResistance
             self.durability = durability
 
+    def drawShadow(self):
+        if self.showShadow:
+            if self.shadow == None:
+                self.shadow = textureAtlas("assets/terrain.png", 288, 32, 32, 32,
+                                           True, 2.35 * self.objectManager.relativeSize / 9.9)
+
+            self.objectManager.screen.blit(self.shadow, (self.x - 0.6 * self.objectManager.relativeSize,
+                                                             self.y - 0.6 * self.objectManager.relativeSize))
+
     def draw(self):
         self.objectManager.screen.blit(self.texture, (self.x, self.y))
         self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
@@ -996,6 +1053,7 @@ class GameObject:
 class TableObject(GameObject):
     def __init__(self, x, y, objectManager, texture):
         super().__init__(x, y, objectManager, 64, texture, False)
+        self.showShadow = False
         self.size = 128
         self.size2 = 64
         self.usable = False
@@ -1072,6 +1130,7 @@ class RepairingTable(TableObject):
 class Entity(GameObject):
     def __init__(self, x, y, entityManager, size, size2, texture):
         super().__init__(x,y,entityManager,size,texture,False)
+        self.showShadow = False
         self.direction = 0
         self.size = size2
         self.size2 = size
@@ -1165,24 +1224,30 @@ class Entity(GameObject):
 
 class GuiTextures:
     def __init__(self, settings, relativeSize):
+
+        size = math.floor(32 * (2 * relativeSize / 9.8))
+        centeringX = math.floor((settings.w - size * 14.45) / 2)
+        centeringY = math.floor((settings.h - size * 9) / 2)
         self.settings = settings
         self.relativeSize = relativeSize
-        self.logo = textureLoader("assets/logo.png", 22.85*2*self.relativeSize, 4*2*self.relativeSize)
-        self.bg1 = pygame.Surface((20*self.relativeSize, 10*self.relativeSize))
-        self.healthIcon = textureLoader("assets/health.png", 10*self.relativeSize, 10*self.relativeSize)
+        self.logo = textureLoader("assets/logo.png", 22.85*2*self.relativeSize, 4*2*self.relativeSize).convert_alpha()
+        self.bg1 = pygame.Surface((20*self.relativeSize, 10*self.relativeSize)).convert_alpha()
+        self.healthIcon = textureLoader("assets/health.png", 10*self.relativeSize, 10*self.relativeSize).convert_alpha()
         self.bg1.set_alpha(100)
-        self.slotSelected = textureLoader("assets/inventorySlotSelected.png", self.relativeSize * 16, self.relativeSize * 8)
-        self.slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8)
+        self.slotSelected = textureLoader("assets/inventorySlotSelected.png", self.relativeSize * 16, self.relativeSize * 8).convert_alpha()
+        self.slot = textureLoader("assets/inventorySlot.png", self.relativeSize * 16, self.relativeSize * 8).convert_alpha()
         self.bgHurt = textureLoader("assets/damaged.png", self.settings.w, self.settings.h).convert_alpha()
         self.bgHurtRealBad = textureLoader("assets/damagedoverlay3NoLag.png", self.settings.w,
                                   self.settings.h).convert_alpha()
         self.exitIcon = textureAtlas("assets/terrain.png", 256, 32, 32, 32, True, 2*self.relativeSize/10)
         self.bgBlood = textureLoader("assets/damagedoverlay2.png", self.settings.w,
                             self.settings.h).convert_alpha()
+        self.shadow = textureLoader("assets/border.png", centeringX+size*13, centeringY+size*8)
 
 class ItemContainerObject(Entity):
     def __init__(self, x, y, objectManager, size, texture, health):
         super().__init__(x, y, objectManager, size, size, texture)
+        self.showShadow = False
         self.items = []
         self.health = health
         self.maxHealth = health
@@ -1352,10 +1417,15 @@ class EntityHostileBase(Entity):
                                      (self.x + self.hitbox[0] / 2, self.y + self.hitbox[1] / 2),
                                      (newPos[0], newPos[1]), int(0.25 * self.objectManager.relativeSize))
                     if isinstance(result[0], Player):
-                        player.objectManager.settings.playSound(
-                            f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
-                            80)
-                        result[0].hurt(self, self.attackDamage, 0, result[1] / 10, result[2] / 10)
+                        if player.getSelectedItem() and player.getSelectedItem().itemId != None and player.getSelectedItem().itemId == 9:
+                            player.objectManager.settings.playSound(
+                                f"assets/sounds/bulletBlock{random.randint(1, 3)}.ogg",
+                                80)
+                        else:
+                            player.objectManager.settings.playSound(
+                                f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
+                                80)
+                            result[0].hurt(self, self.attackDamage, 0, result[1] / 10, result[2] / 10)
         else:
             if pygame.time.get_ticks() - self.currentTime >= self.cooldown:
                 player = self.objectManager.map.player
@@ -1678,15 +1748,15 @@ class Items:
         self.items = [FirearmItem(map, textureAtlas("assets/items.png", 16, 0, 16, 16,True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  ".22 Broomhandle", 0, 1, 100,15, (96,0,32,32), 250,
-                                  "assets/sounds/headshot", "assets/sounds/pistol1", None, 2, 2),
+                                  "assets/sounds/bulletFlesh", "assets/sounds/pistol1", None, 5, 2),
                       FirearmItem(map, textureAtlas("assets/items.png", 32, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "Caldwell Handcannon", 1, 1, 50,15, (128,0,32,32), 300,
-                                  "assets/sounds/headshot", "assets/sounds/shotgun1", None, 2, 15, 12),
+                                  "assets/sounds/bulletFlesh", "assets/sounds/shotgun1", None, 5, 15, 12),
                       FirearmItem(map, textureAtlas("assets/items.png", 48, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "Parabellum", 2, 1, 250,25, (160,0,32,32), 200,
-                                  "assets/sounds/headshot", "assets/sounds/pistol2", None, 2, 1.5),
+                                  "assets/sounds/bulletFlesh", "assets/sounds/pistol2", None, 5, 1.5),
                       FirearmItem(map, textureAtlas("assets/items.png", 64, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "Taurus 689", 3, 1, 150,35, (192,0,32,32), 500,
@@ -1698,11 +1768,11 @@ class Items:
                       FirearmItem(map, textureAtlas("assets/items.png", 96, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "vz. 61 Scorpion", 5, 1, 200,10, (0,32,32,32), 70,
-                                  "assets/sounds/headshot", "assets/sounds/smg1", None, 2, 3),
+                                  "assets/sounds/bulletFlesh", "assets/sounds/smg1", None, 5, 3),
                       FirearmItem(map, textureAtlas("assets/items.png", 112, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "MP5k", 6, 1, 300,12, (32,32,32,32), 75,
-                                  "assets/sounds/headshot", "assets/sounds/smg3", None, 2, 1),
+                                  "assets/sounds/bulletFlesh", "assets/sounds/smg3", None, 5, 1),
                       FirearmItem(map, textureAtlas("assets/items.png", 128, 0, 16, 16, True,
                                                    2 * objectManager.relativeSize / 9.9),
                                  "CBJ-MS PDW", 7, 1, 250,15, (64,32,32,32), 50,
