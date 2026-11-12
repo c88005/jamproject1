@@ -59,7 +59,7 @@ class Game:
         self.map.items = self.items
         self.objectManager.items = self.items
         self.entityManager.items = self.items
-        self.version = "30.08.26 2:35AM PATCH1.1"
+        self.version = "12.11.26 11:25PM PATCH 1.2"
         self.deathTime = pygame.time.get_ticks()
 
         self.pickup = False
@@ -265,17 +265,20 @@ class Game:
             self.screen.fill((0,0,0))
             if self.menu == False:
                 self.gameTick()
+                #print(self.player.objectManager.shakeTime, self.player.objectManager.shakeX, self.player.objectManager.shakeY, pygame.time.get_ticks(), pygame.time.get_ticks() - self.objectManager.shakeTime)
+                if pygame.time.get_ticks() - self.player.objectManager.shakeTime >= self.player.objectManager.shakeDuration:
+                    self.player.objectManager.shakeX = 0
+                    self.player.objectManager.shakeY = 0
                 for tile in self.map.floorTiles:
                     tile.draw()
-                if self.settings.showBlood:
-                    for effect in self.map.effects:
-                        effect.draw()
+                for effect in self.map.effects:
+                    effect.draw()
 
                 self.player.draw()
                 if self.settings.shadows:
                     for object in self.map.objects:
                         object.drawShadow()
-                    self.objectManager.screen.blit(self.guiTextures.shadow, (centeringX + size/9.9,
+                    self.screen.blit(self.guiTextures.shadow, (centeringX + size/9.9,
                                                             centeringY + size/2))
                 for object in self.map.objects:
                     object.draw()
@@ -298,7 +301,11 @@ class Game:
                                     "assets/zekton_rg.ttf", "#000000", False, False)
                 if self.player.isDead:
                     pygame.mixer.music.fadeout(1000)
-                    self.renderText("Press Space To Go To Menu", 0, self.relativeSize*20, int(self.relativeSize*7), "assets/zekton_rg.ttf", "#FFFFFF", False, False)
+                    if pygame.time.get_ticks() - self.player.deathTime >= 800 and self.player.deathTime > 0:
+                        pygame.draw.rect(self.screen,"#000000", (0,0,self.settings.w, self.settings.h))
+                        if pygame.time.get_ticks() - self.player.deathTime >= 2000 and self.player.deathTime > 0:
+                            self.renderText("Press Space To Go To Menu", 0, self.settings.h - self.relativeSize * 5,
+                                        int(self.relativeSize * 4), "assets/zekton_rg.ttf", "#FFFFFF", False, False)
             else:
                 self.menuDraw()
             self.keyboardInput()
@@ -592,6 +599,7 @@ class Manager:
     def __init__(self, settings):
         self.settings = settings
 
+
 class ObjectManager(Manager):
     def __init__(self, screen, relativeSize, settings, gameMap):
         super().__init__(settings)
@@ -599,6 +607,16 @@ class ObjectManager(Manager):
         self.map = gameMap
         self.relativeSize = relativeSize
         self.items = None
+        self.shakeX = 0
+        self.shakeY = 0
+        self.shakeTime = 0
+        self.shakeDuration = 1
+
+    def setShake(self, x, y, duration=50):
+        self.shakeX = x
+        self.shakeY = y
+        self.shakeTime = pygame.time.get_ticks()
+        self.shakeDuration = duration
 
 class EntityManager(ObjectManager):
     def __init__(self, screen, relativeSize, settings, gameMap):
@@ -760,6 +778,7 @@ class Map:
             for _ in range(lockersAmount):
                 self.spawnLockerWithRandom(rng)
                 self.spawnBoxWithRandom(rng)
+        self.checkForLayering()
 
         if tableRandom == 0:
             self.spawnTable(rng)
@@ -770,6 +789,13 @@ class Map:
         elif self.roomLayer == 2:
             self.createBounds(416, 0, 32, 32)
 
+    def checkForLayering(self):
+        for object in self.objects:
+            for objectOverlap in self.objects:
+                if objectOverlap != object:
+                    if objectOverlap.x == object.x and objectOverlap.y == object.y:
+                        self.objects.remove(objectOverlap)
+
     def spawnLockerWithRandom(self, rng):
         size = 32 * (2 * self.objectManager.relativeSize / 10)
         centeringX = math.floor((self.objectManager.settings.w - size*14)/2)
@@ -778,7 +804,10 @@ class Map:
         position2 = rng.randint(1, 7)
         locker = ItemContainerObject(centeringX+position*size, centeringY+position2*size, self.objectManager, 64,
                                      textureAtlas("assets/terrain.png", 320, 0, 32, 32,
-                                                  True, 2 * self.objectManager.relativeSize / 9.9), 1)
+                                                  True, 2 * self.objectManager.relativeSize / 9.9), 1,
+                                     textureAtlas("assets/terrain.png", 352, 0, 32, 32,
+                                                  True, 2 * self.objectManager.relativeSize / 9.9)
+                                     )
         for _ in range(rng.randint(1, 3)):
             locker.addItem(self.items.items[rng.randint(0, len(self.items.items) - 1)].clone())
         self.entities.append(locker)
@@ -791,7 +820,9 @@ class Map:
         position2 = rng.randint(1, 7)
         locker = ItemContainerObject(centeringX+position*size, centeringY+position2*size, self.objectManager, 64,
                                      textureAtlas("assets/terrain.png", 256, 0, 32, 32,
-                                                  True, 2 * self.objectManager.relativeSize / 9.9), 1)
+                                                  True, 2 * self.objectManager.relativeSize / 9.9), 1,
+
+                                     )
         for _ in range(rng.randint(1, 3)):
             item = rng.randint(0, len(self.items.items) - 1)
             if item == 16:
@@ -1043,7 +1074,7 @@ class GameObject:
                                                              self.y - 0.6 * self.objectManager.relativeSize))
 
     def draw(self):
-        self.objectManager.screen.blit(self.texture, (self.x, self.y))
+        self.objectManager.screen.blit(self.texture, (self.x+self.objectManager.shakeX ,self.y+self.objectManager.shakeY))
         self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
         if self.objectManager.settings.showAABB:
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
@@ -1162,7 +1193,8 @@ class Entity(GameObject):
                 newDamage *= (100-self.damageResistance) / 100
             if newDamage > self.health:
                 for _ in range(random.randint(1,2)):
-                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                    if self.objectManager.settings.showBlood:
+                        self.objectManager.map.effects.append(Effect(self.objectManager,self.objectManager.screen, textureAtlas("assets/particles.png",
                                                                               random.randint(0,3)*16, 0,
                                                                               16,16, True, 3*self.objectManager.relativeSize/10),
                                                                  self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
@@ -1177,7 +1209,7 @@ class Entity(GameObject):
                 elif self.armor < 0:
                     self.armor = 0
                 for _ in range(random.randint(0,1)):
-                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                    self.objectManager.map.effects.append(Effect(self.objectManager,self.objectManager.screen, textureAtlas("assets/particles.png",
                                                                               random.randint(0,3)*16, 0,
                                                                               16,16, True, 3*self.objectManager.relativeSize/10),
                                                                  self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
@@ -1215,8 +1247,8 @@ class Entity(GameObject):
             self.yd = 0.0
 
     def draw(self):
-        self.objectManager.screen.blit(self.texture, (self.x - (self.texture.get_rect()[2]-self.size*self.objectManager.relativeSize/10)/2,
-                                                      self.y - (self.texture.get_rect()[3]-self.size2*self.objectManager.relativeSize/10)/2))
+        self.objectManager.screen.blit(self.texture, (self.x+self.objectManager.shakeX - (self.texture.get_rect()[2]-self.size*self.objectManager.relativeSize/10)/2,
+                                                      self.y+self.objectManager.shakeY - (self.texture.get_rect()[3]-self.size2*self.objectManager.relativeSize/10)/2))
         self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
         if self.objectManager.settings.showAABB:
             pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
@@ -1245,9 +1277,10 @@ class GuiTextures:
         self.shadow = textureLoader("assets/border.png", centeringX+size*13, centeringY+size*8)
 
 class ItemContainerObject(Entity):
-    def __init__(self, x, y, objectManager, size, texture, health):
+    def __init__(self, x, y, objectManager, size, texture, health, deadTexture=None):
         super().__init__(x, y, objectManager, size, size, texture)
         self.showShadow = False
+        self.deadTexture = deadTexture
         self.items = []
         self.health = health
         self.maxHealth = health
@@ -1279,6 +1312,21 @@ class ItemContainerObject(Entity):
             self.objectManager.map.entities.append(ItemEntity(self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize,
                                                               self.y + random.randint(-10, 10)/10 * self.objectManager.relativeSize,
                                                               self.objectManager, item.clone()))
+    def draw(self):
+        if self.deadTexture != None and self.isDead:
+            self.objectManager.screen.blit(self.deadTexture, (self.x+self.objectManager.shakeX - (
+                        self.deadTexture.get_rect()[2] - self.size * self.objectManager.relativeSize / 10) / 2,
+                                                          self.y+self.objectManager.shakeX - (self.deadTexture.get_rect()[
+                                                                        3] - self.size2 * self.objectManager.relativeSize / 10) / 2))
+        else:
+            self.objectManager.screen.blit(self.texture, (self.x+self.objectManager.shakeX - (
+                        self.texture.get_rect()[2] - self.size * self.objectManager.relativeSize / 10) / 2,
+                                                          self.y+self.objectManager.shakeX - (self.texture.get_rect()[
+                                                                        3] - self.size2 * self.objectManager.relativeSize / 10) / 2))
+        self.hitbox = (self.size*self.objectManager.relativeSize/10,self.size2*self.objectManager.relativeSize/10)
+        if self.objectManager.settings.showAABB:
+            pygame.draw.rect(self.objectManager.screen, (255, 255, 255),
+                             (self.x, self.y, self.hitbox[0], self.hitbox[1]), 1)
 
 
 class EntityHostileBase(Entity):
@@ -1665,7 +1713,7 @@ class EnemyBoss(EntityHostileBase):
                 newDamage *= (100-self.damageResistance) / 100
             if newDamage > self.health:
                 for _ in range(random.randint(1,2)):
-                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                    self.objectManager.map.effects.append(Effect(self.objectManager,self.objectManager.screen, textureAtlas("assets/particles.png",
                                                                               random.randint(0,3)*16, 0,
                                                                               16,16, True, 3*self.objectManager.relativeSize/10),
                                                                  self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
@@ -1680,7 +1728,7 @@ class EnemyBoss(EntityHostileBase):
                 elif self.armor < 0:
                     self.armor = 0
                 for _ in range(random.randint(0,1)):
-                    self.objectManager.map.effects.append(Effect(self.objectManager.screen, textureAtlas("assets/particles.png",
+                    self.objectManager.map.effects.append(Effect(self.objectManager,self.objectManager.screen, textureAtlas("assets/particles.png",
                                                                               random.randint(0,3)*16, 0,
                                                                               16,16, True, 3*self.objectManager.relativeSize/10),
                                                                  self.x + random.randint(-10, 10)/10 * self.objectManager.relativeSize/10,
@@ -1690,14 +1738,17 @@ class EnemyBoss(EntityHostileBase):
 
 
 class Effect:
-    def __init__(self, screen, texture, x, y):
+    def __init__(self, objectmanager, screen, texture, x, y, persistent=True, time=pygame.time.get_ticks()):
         self.screen = screen
         self.texture = texture
+        self.time = time
+        self.objectManager = objectmanager
+        self.persistent = persistent
         self.x = x
         self.y = y
 
     def draw(self):
-        self.screen.blit(self.texture, (self.x, self.y))
+        self.screen.blit(self.texture, (self.x+self.objectManager.shakeX, self.y+self.objectManager.shakeX))
 
 class Ray:
     def __init__(self, x0, y0, x1, y1):
@@ -2036,6 +2087,7 @@ class FirearmItem(UsableItem):
                         f"{self.hitSound}{random.randint(1, self.hitSoundRandom)}.ogg",
                         80)
                     result[0].hurt(player, self.attackDamage, 0, result[1] / 1, result[2] / 1)
+            self.map.objectManager.setShake(random.randint(-5,5),random.randint(-5,5), 15)
 
 
 class AnimationSequence:
@@ -2072,11 +2124,15 @@ class Player(Entity):
         self.moveSpeed += 0.5
         self.walkingAnim = AnimationSequence([ (32, 0, 32, 32), (0, 0, 32, 32), (64, 0, 32, 32), (0, 0, 32, 32)], 125)
         self.useStopper = False
+        self.deathTime = 0
         self.currentTime = pygame.time.get_ticks()
 
     def update(self):
         super().update()
         if self.isDead:
+            if self.deathTime <= 0:
+                self.objectManager.settings.playSound(f"assets/sounds/drama.ogg",80)
+                self.deathTime = pygame.time.get_ticks()
             self.originalTexture = textureAtlas("assets/player.png", 64, 64, 32, 32,
                                                 True, 3.5 * self.objectManager.relativeSize / 10)
             self.texture = rotateAtCenter(self.originalTexture, math.degrees(-self.angle) - 90 + self.movementRotation,
